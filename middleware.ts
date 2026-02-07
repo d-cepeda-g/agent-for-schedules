@@ -29,6 +29,7 @@ function shouldSkip(pathname: string): boolean {
   if (pathname.startsWith("/_next/")) return true;
   if (pathname === "/favicon.ico") return true;
   if (pathname.startsWith("/api/elevenlabs/webhook")) return true;
+  if (pathname.startsWith("/api/health")) return true;
   if (pathname.includes(".") && !pathname.startsWith("/api/")) return true;
   return false;
 }
@@ -48,9 +49,7 @@ export function middleware(request: NextRequest) {
   const expectedPass = process.env.BASIC_AUTH_PASSWORD;
 
   if (!expectedUser || !expectedPass) {
-    return new NextResponse("Basic auth is not configured on the server", {
-      status: 500,
-    });
+    return NextResponse.next();
   }
 
   const authHeader = request.headers.get("authorization");
