@@ -115,9 +115,13 @@ export default function DashboardPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          callReason: "Immediate follow-up",
-          callPurpose: "Connect and help schedule appointment",
+          callReason:
+            "Reminder for clinic appointment at Kaulbachstraße on July 25",
+          callPurpose:
+            "Remind David to set up his clinic appointment at Kaulbachstraße for July 25 and confirm availability at that time",
           preferredLanguage: "English",
+          notes:
+            "Please remind David Cepeda to book his appointment at the Kaulbachstraße clinic for July 25 and confirm if that time works for him.",
         }),
       });
 

@@ -7,13 +7,16 @@ import { normalizeOptionalString } from "@/lib/validation";
 export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   const callReason =
-    normalizeOptionalString(body?.callReason) || "Immediate outbound follow-up";
+    normalizeOptionalString(body?.callReason) ||
+    "Reminder for clinic appointment at Kaulbachstraße on July 25";
   const callPurpose =
     normalizeOptionalString(body?.callPurpose) ||
-    "Connect with patient and assist with scheduling";
+    "Remind David to set up his clinic appointment at Kaulbachstraße for July 25 and confirm availability at that time";
   const preferredLanguage =
     normalizeOptionalString(body?.preferredLanguage) || "English";
-  const notes = normalizeOptionalString(body?.notes) || "";
+  const notes =
+    normalizeOptionalString(body?.notes) ||
+    "Please remind David Cepeda to book his appointment at the Kaulbachstraße clinic for July 25 and confirm if that time works for him.";
 
   const customer = await db.customer.findFirst({
     where: {
