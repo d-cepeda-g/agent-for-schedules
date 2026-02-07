@@ -3,8 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("SQLITE_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model Customer {
@@ -50,16 +50,16 @@ model CallEvaluation {
 }
 
 model CallActionItem {
-  id             String   @id @default(cuid())
+  id              String   @id @default(cuid())
   scheduledCallId String
-  conversationId String
-  source         String   @default("data_collection") // data_collection
-  key            String   @default("")
-  title          String
-  detail         String
-  completed      Boolean  @default(false)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  conversationId  String
+  source          String   @default("data_collection") // data_collection
+  key             String   @default("")
+  title           String
+  detail          String
+  completed       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   scheduledCall ScheduledCall @relation(fields: [scheduledCallId], references: [id], onDelete: Cascade)
 

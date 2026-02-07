@@ -4,11 +4,12 @@
 A Next.js application for scheduling and managing automated phone calls. It features a dashboard for tracking calls, managing customers, and reviewing call evaluations. The app uses ElevenLabs integration for call dispatching.
 
 ## Recent Changes
-- **2026-02-07**: Initial Replit setup — configured SQLite via Prisma, allowed dev origins for Replit proxy, set up deployment.
+- **2026-02-07**: Migrated database from SQLite to Replit's built-in PostgreSQL (via Prisma ORM, env var: `DATABASE_URL`).
+- **2026-02-07**: Initial Replit setup — allowed dev origins for Replit proxy, set up deployment.
 
 ## Project Architecture
 - **Framework**: Next.js 16 (App Router, Turbopack)
-- **Database**: SQLite via Prisma ORM (env var: `SQLITE_URL`)
+- **Database**: PostgreSQL (Replit built-in) via Prisma ORM (env var: `DATABASE_URL`)
 - **Styling**: Tailwind CSS 4 + shadcn/ui components
 - **Language**: TypeScript
 
@@ -34,7 +35,7 @@ A Next.js application for scheduling and managing automated phone calls. It feat
 - Requires `BASIC_AUTH_USERNAME` and `BASIC_AUTH_PASSWORD` env vars
 
 ### Environment Variables
-- `SQLITE_URL` — SQLite database path (default: `file:./dev.db`)
+- `DATABASE_URL` — PostgreSQL connection string (managed by Replit)
 - `ELEVENLABS_API_KEY` — ElevenLabs API key (optional, for call dispatching)
 - `ELEVENLABS_AGENT_ID` — ElevenLabs agent ID (optional)
 - `BASIC_AUTH_USERNAME` / `BASIC_AUTH_PASSWORD` — Basic auth credentials (for production)
