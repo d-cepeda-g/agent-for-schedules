@@ -25,6 +25,9 @@ type CustomerHistory = {
     status: string;
     scheduledAt: string;
     notes: string;
+    callReason: string;
+    callPurpose: string;
+    preferredLanguage: string;
     conversationId: string;
     evaluation: {
       result: string;
@@ -184,6 +187,16 @@ export default function CustomerHistoryPage() {
                   <p className="text-sm text-muted-foreground">
                     Transcript not available yet.
                   </p>
+                )}
+
+                {(call.callReason || call.callPurpose || call.preferredLanguage) && (
+                  <div className="rounded border p-3 text-sm text-muted-foreground">
+                    {call.callReason && <p>Reason: {call.callReason}</p>}
+                    {call.callPurpose && <p>Purpose: {call.callPurpose}</p>}
+                    {call.preferredLanguage && (
+                      <p>Language: {call.preferredLanguage}</p>
+                    )}
+                  </div>
                 )}
 
                 {call.actionItems.length > 0 && (

@@ -65,6 +65,39 @@ export async function PATCH(_request: NextRequest, { params }: Params) {
     data.notes = notes;
   }
 
+  if (body.callReason !== undefined) {
+    const callReason = normalizeOptionalString(body.callReason);
+    if (callReason === null) {
+      return NextResponse.json(
+        { error: "callReason must be a string" },
+        { status: 400 }
+      );
+    }
+    data.callReason = callReason;
+  }
+
+  if (body.callPurpose !== undefined) {
+    const callPurpose = normalizeOptionalString(body.callPurpose);
+    if (callPurpose === null) {
+      return NextResponse.json(
+        { error: "callPurpose must be a string" },
+        { status: 400 }
+      );
+    }
+    data.callPurpose = callPurpose;
+  }
+
+  if (body.preferredLanguage !== undefined) {
+    const preferredLanguage = normalizeOptionalString(body.preferredLanguage);
+    if (preferredLanguage === null) {
+      return NextResponse.json(
+        { error: "preferredLanguage must be a string" },
+        { status: 400 }
+      );
+    }
+    data.preferredLanguage = preferredLanguage;
+  }
+
   if (Object.keys(data).length === 0) {
     return NextResponse.json(
       { error: "No valid fields provided to update" },

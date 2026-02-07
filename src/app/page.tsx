@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import {
   Card,
@@ -19,6 +20,7 @@ import {
   Clock,
   Users,
   ArrowRight,
+  Play,
 } from "lucide-react";
 
 type Call = {
@@ -42,8 +44,10 @@ type Evaluation = {
 };
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [upcomingCalls, setUpcomingCalls] = useState<Call[]>([]);
   const [recentEvals, setRecentEvals] = useState<Evaluation[]>([]);
+  const [quickCalling, setQuickCalling] = useState(false);
   const [stats, setStats] = useState({
     totalCalls: 0,
     pending: 0,
@@ -104,13 +108,47 @@ export default function DashboardPage() {
     cancelled: "destructive",
   };
 
+  async function handleQuickCallDavid() {
+    setQuickCalling(true);
+    try {
+      const res = await fetch("/api/calls/quick-david", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          callReason: "Immediate follow-up",
+          callPurpose: "Connect and help schedule appointment",
+          preferredLanguage: "English",
+        }),
+      });
+
+      const payload = (await res.json().catch(() => null)) as
+        | { call?: { id: string }; error?: string }
+        | null;
+
+      if (!res.ok || !payload?.call?.id) {
+        alert(payload?.error || "Failed to trigger quick call");
+        return;
+      }
+
+      router.push(`/calls/${payload.call.id}`);
+    } finally {
+      setQuickCalling(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Dashboard</h1>
-        <p className="text-muted-foreground">
-          Overview of your scheduled calls and evaluations
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <p className="text-muted-foreground">
+            Overview of your scheduled calls and evaluations
+          </p>
+        </div>
+        <Button onClick={handleQuickCallDavid} disabled={quickCalling}>
+          <Play className="mr-2 h-4 w-4" />
+          {quickCalling ? "Calling David..." : "Call David Cepeda Now"}
+        </Button>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

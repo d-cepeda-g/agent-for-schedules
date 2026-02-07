@@ -33,6 +33,33 @@ function getMissingConfigError(message: string): boolean {
   return message.includes("ELEVENLABS_") && message.includes("is not set");
 }
 
+function buildPromptVariables(call: CallWithCustomer): Record<string, string> {
+  const preferredLanguage = call.preferredLanguage?.trim() || "English";
+  const callReason = call.callReason?.trim() || "";
+  const callPurpose = call.callPurpose?.trim() || "";
+  const notes = call.notes?.trim() || "";
+
+  const contextLines = [
+    `Language: ${preferredLanguage}`,
+    callReason ? `Reason: ${callReason}` : "",
+    callPurpose ? `Purpose: ${callPurpose}` : "",
+    notes ? `Additional context: ${notes}` : "",
+  ].filter(Boolean);
+
+  const pairs = [
+    ["customer_name", call.customer.name],
+    ["preferred_language", preferredLanguage],
+    ["call_reason", callReason],
+    ["call_purpose", callPurpose],
+    ["additional_context", notes],
+    ["call_context", contextLines.join("\n")],
+  ] as const;
+
+  return Object.fromEntries(
+    pairs.filter(([, value]) => typeof value === "string" && value.trim().length > 0)
+  );
+}
+
 export async function dispatchScheduledCall(
   callId: string,
   options: DispatchOptions = {}
@@ -85,15 +112,19 @@ export async function dispatchScheduledCall(
   }
 
   try {
+    const promptVariables = buildPromptVariables(call);
+
     await createCallLogSafe({
       scheduledCallId: call.id,
       event: "dispatch_attempt",
       message: `Dispatching outbound call to ${call.customer.phone}`,
+      details: { promptVariables },
     });
 
-    // Keep outbound calls on the agent's published script. Notes remain stored in DB
-    // but are not spoken as the first message.
-    const result = await makeOutboundCall(call.customer.phone);
+    const result = await makeOutboundCall(
+      call.customer.phone,
+      Object.keys(promptVariables).length > 0 ? { promptVariables } : undefined
+    );
 
     const updatedCall = await db.scheduledCall.update({
       where: { id: call.id },

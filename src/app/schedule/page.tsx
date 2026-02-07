@@ -36,6 +36,9 @@ type ScheduledCall = {
   scheduledAt: string;
   status: string;
   notes: string;
+  callReason: string;
+  callPurpose: string;
+  preferredLanguage: string;
   customer: { id: string; name: string; phone: string };
 };
 
@@ -46,6 +49,9 @@ export default function SchedulePage() {
   );
   const [customerId, setCustomerId] = useState("");
   const [time, setTime] = useState("09:00");
+  const [callReason, setCallReason] = useState("");
+  const [callPurpose, setCallPurpose] = useState("");
+  const [preferredLanguage, setPreferredLanguage] = useState("English");
   const [notes, setNotes] = useState("");
   const [daysCalls, setDaysCalls] = useState<ScheduledCall[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -124,6 +130,9 @@ export default function SchedulePage() {
         body: JSON.stringify({
           customerId,
           scheduledAt: scheduledAt.toISOString(),
+          callReason,
+          callPurpose,
+          preferredLanguage,
           notes,
         }),
       });
@@ -137,6 +146,8 @@ export default function SchedulePage() {
       }
 
       setNotes("");
+      setCallReason("");
+      setCallPurpose("");
       refreshDayCalls();
     } finally {
       setSubmitting(false);
@@ -237,6 +248,42 @@ export default function SchedulePage() {
                     />
                   </div>
                 </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Reason for call</Label>
+                    <Input
+                      value={callReason}
+                      onChange={(e) => setCallReason(e.target.value)}
+                      placeholder="e.g., Appointment scheduling"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Preferred language</Label>
+                    <Select
+                      value={preferredLanguage}
+                      onValueChange={setPreferredLanguage}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select language" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="English">English</SelectItem>
+                        <SelectItem value="Spanish">Spanish</SelectItem>
+                        <SelectItem value="German">German</SelectItem>
+                        <SelectItem value="French">French</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Purpose</Label>
+                  <Textarea
+                    value={callPurpose}
+                    onChange={(e) => setCallPurpose(e.target.value)}
+                    placeholder="e.g., Help patient book annual checkup this week"
+                    rows={2}
+                  />
+                </div>
                 <div className="space-y-2">
                   <Label>Notes (optional agent context)</Label>
                   <Textarea
@@ -283,6 +330,14 @@ export default function SchedulePage() {
                             {format(new Date(call.scheduledAt), "h:mm a")} &middot;{" "}
                             {call.customer.phone}
                           </p>
+                          {call.callReason && (
+                            <p className="text-xs text-muted-foreground">
+                              {call.callReason}
+                              {call.preferredLanguage
+                                ? ` · ${call.preferredLanguage}`
+                                : ""}
+                            </p>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">

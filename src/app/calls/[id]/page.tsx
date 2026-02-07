@@ -29,6 +29,9 @@ type CallDetail = {
   scheduledAt: string;
   status: string;
   notes: string;
+  callReason: string;
+  callPurpose: string;
+  preferredLanguage: string;
   conversationId: string;
   agentId: string;
   customer: {
@@ -234,6 +237,26 @@ export default function CallDetailPage() {
                 <div>
                   <p className="text-sm font-medium">Notes</p>
                   <p className="text-sm text-muted-foreground">{call.notes}</p>
+                </div>
+              )}
+              {(call.callReason || call.callPurpose || call.preferredLanguage) && (
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Agent Context</p>
+                  {call.callReason && (
+                    <p className="text-sm text-muted-foreground">
+                      Reason: {call.callReason}
+                    </p>
+                  )}
+                  {call.callPurpose && (
+                    <p className="text-sm text-muted-foreground">
+                      Purpose: {call.callPurpose}
+                    </p>
+                  )}
+                  {call.preferredLanguage && (
+                    <p className="text-sm text-muted-foreground">
+                      Language: {call.preferredLanguage}
+                    </p>
+                  )}
                 </div>
               )}
 

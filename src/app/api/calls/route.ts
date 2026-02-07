@@ -63,6 +63,10 @@ export async function POST(request: NextRequest) {
   const customerId = normalizeRequiredString(body.customerId);
   const scheduledAt = parseDateInput(body.scheduledAt);
   const notes = normalizeOptionalString(body.notes) ?? "";
+  const callReason = normalizeOptionalString(body.callReason) ?? "";
+  const callPurpose = normalizeOptionalString(body.callPurpose) ?? "";
+  const preferredLanguage =
+    normalizeOptionalString(body.preferredLanguage) ?? "English";
 
   if (!customerId || !scheduledAt) {
     return NextResponse.json(
@@ -81,6 +85,9 @@ export async function POST(request: NextRequest) {
       customerId,
       scheduledAt,
       notes,
+      callReason,
+      callPurpose,
+      preferredLanguage,
       agentId: process.env.ELEVENLABS_AGENT_ID || "",
     },
     include: {
@@ -95,6 +102,8 @@ export async function POST(request: NextRequest) {
     details: {
       customerId: call.customer.id,
       scheduledAt: call.scheduledAt.toISOString(),
+      callReason: call.callReason,
+      preferredLanguage: call.preferredLanguage,
     },
   });
 

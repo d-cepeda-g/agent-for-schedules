@@ -33,6 +33,7 @@ export async function makeOutboundCall(
   overrides?: {
     firstMessage?: string;
     prompt?: string;
+    promptVariables?: Record<string, string>;
   }
 ): Promise<OutboundCallResult> {
   const body: Record<string, unknown> = {
@@ -49,12 +50,20 @@ export async function makeOutboundCall(
     agentOverride.first_message = overrides.firstMessage;
   }
 
+  const conversationInitiationClientData: Record<string, unknown> = {};
+
+  if (overrides?.promptVariables && Object.keys(overrides.promptVariables).length > 0) {
+    conversationInitiationClientData.dynamic_variables = overrides.promptVariables;
+  }
+
   if (Object.keys(agentOverride).length > 0) {
-    body.conversation_initiation_client_data = {
-      conversation_config_override: {
-        agent: agentOverride,
-      },
+    conversationInitiationClientData.conversation_config_override = {
+      agent: agentOverride,
     };
+  }
+
+  if (Object.keys(conversationInitiationClientData).length > 0) {
+    body.conversation_initiation_client_data = conversationInitiationClientData;
   }
 
   const response = await fetch(

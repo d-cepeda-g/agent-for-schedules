@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   CalendarPlus,
+  CalendarDays,
   Users,
   Phone,
   Menu,
@@ -16,6 +17,7 @@ import { useState } from "react";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/schedule", label: "Schedule", icon: CalendarPlus },
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/calls", label: "Calls", icon: Phone },
