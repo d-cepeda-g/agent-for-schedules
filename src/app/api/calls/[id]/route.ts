@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createCallLogSafe } from "@/lib/call-logs";
 import { db } from "@/lib/db";
 import { isPrismaNotFoundError } from "@/lib/prisma-errors";
 import {
@@ -17,6 +18,9 @@ export async function GET(_request: NextRequest, { params }: Params) {
       customer: true,
       evaluation: true,
       actionItems: {
+        orderBy: { createdAt: "desc" },
+      },
+      logs: {
         orderBy: { createdAt: "desc" },
       },
     },
@@ -77,6 +81,14 @@ export async function PATCH(_request: NextRequest, { params }: Params) {
       },
     });
 
+    if (typeof data.status === "string") {
+      await createCallLogSafe({
+        scheduledCallId: id,
+        event: "status_updated",
+        message: `Call status set to ${data.status}`,
+      });
+    }
+
     return NextResponse.json(call);
   } catch (error) {
     if (isPrismaNotFoundError(error)) {
@@ -92,6 +104,12 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
     await db.scheduledCall.update({
       where: { id },
       data: { status: "cancelled" },
+    });
+    await createCallLogSafe({
+      scheduledCallId: id,
+      event: "status_updated",
+      message: "Call cancelled",
+      level: "warn",
     });
     return NextResponse.json({ success: true });
   } catch (error) {

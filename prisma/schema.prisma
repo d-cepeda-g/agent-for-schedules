@@ -34,6 +34,7 @@ model ScheduledCall {
   customer    Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
   evaluation  CallEvaluation?
   actionItems CallActionItem[]
+  logs        CallLog[]
 }
 
 model CallEvaluation {
@@ -65,4 +66,19 @@ model CallActionItem {
 
   @@index([scheduledCallId, createdAt])
   @@index([conversationId])
+}
+
+model CallLog {
+  id              String   @id @default(cuid())
+  scheduledCallId String
+  event           String
+  level           String   @default("info") // info | warn | error
+  message         String
+  details         String   @default("")
+  createdAt       DateTime @default(now())
+
+  scheduledCall ScheduledCall @relation(fields: [scheduledCallId], references: [id], onDelete: Cascade)
+
+  @@index([scheduledCallId, createdAt])
+  @@index([event])
 }

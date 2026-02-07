@@ -21,6 +21,7 @@ import {
   Clock,
   MessageSquare,
   ListTodo,
+  History,
 } from "lucide-react";
 
 type CallDetail = {
@@ -50,6 +51,14 @@ type CallDetail = {
     detail: string;
     source: string;
     completed: boolean;
+    createdAt: string;
+  }>;
+  logs: Array<{
+    id: string;
+    event: string;
+    level: string;
+    message: string;
+    details: string;
     createdAt: string;
   }>;
 };
@@ -190,6 +199,7 @@ export default function CallDetailPage() {
     ?.split("\n")
     .filter(Boolean) || [];
   const actionItems = call.actionItems || [];
+  const logs = call.logs || [];
 
   return (
     <div className="space-y-6">
@@ -254,6 +264,54 @@ export default function CallDetailPage() {
                   </Button>
                 )}
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <History className="h-5 w-5" />
+                Call Event Log
+              </CardTitle>
+              <CardDescription>
+                System timeline for this call
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {logs.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No events recorded yet.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {logs.map((log) => (
+                    <div key={log.id} className="rounded-lg border p-3">
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <p className="text-sm font-medium">{log.message}</p>
+                        <Badge
+                          variant={
+                            log.level === "error"
+                              ? "destructive"
+                              : log.level === "warn"
+                                ? "secondary"
+                                : "outline"
+                          }
+                        >
+                          {log.level}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {format(new Date(log.createdAt), "MMM d, yyyy h:mm:ss a")} · {log.event}
+                      </p>
+                      {log.details && (
+                        <pre className="mt-2 overflow-x-auto rounded bg-muted p-2 text-xs">
+                          {log.details}
+                        </pre>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
 

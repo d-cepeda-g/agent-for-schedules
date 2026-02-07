@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { createCallLogSafe } from "@/lib/call-logs";
 import { db } from "@/lib/db";
 import { makeOutboundCall, type OutboundCallResult } from "@/lib/elevenlabs";
 import type { CallStatus } from "@/lib/validation";
@@ -84,9 +85,15 @@ export async function dispatchScheduledCall(
   }
 
   try {
-    const result = await makeOutboundCall(call.customer.phone, {
-      firstMessage: call.notes ? `Hi ${call.customer.name}, ${call.notes}` : undefined,
+    await createCallLogSafe({
+      scheduledCallId: call.id,
+      event: "dispatch_attempt",
+      message: `Dispatching outbound call to ${call.customer.phone}`,
     });
+
+    // Keep outbound calls on the agent's published script. Notes remain stored in DB
+    // but are not spoken as the first message.
+    const result = await makeOutboundCall(call.customer.phone);
 
     const updatedCall = await db.scheduledCall.update({
       where: { id: call.id },
@@ -97,6 +104,17 @@ export async function dispatchScheduledCall(
       include: { customer: true },
     });
 
+    await createCallLogSafe({
+      scheduledCallId: call.id,
+      event: "dispatch_success",
+      message: "Outbound call accepted by ElevenLabs",
+      details: {
+        conversationId: result.conversation_id,
+        callSid: result.callSid,
+        providerMessage: result.message,
+      },
+    });
+
     return { ok: true, call: updatedCall, elevenlabs: result };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -105,6 +123,13 @@ export async function dispatchScheduledCall(
     await db.scheduledCall.update({
       where: { id: call.id },
       data: { status: isConfigError ? call.status : "failed" },
+    });
+
+    await createCallLogSafe({
+      scheduledCallId: call.id,
+      event: "dispatch_failed",
+      level: "error",
+      message,
     });
 
     return {

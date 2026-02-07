@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createCallLogSafe } from "@/lib/call-logs";
 import { db } from "@/lib/db";
 import {
   isCallStatus,
@@ -84,6 +85,16 @@ export async function POST(request: NextRequest) {
     },
     include: {
       customer: { select: { id: true, name: true, phone: true } },
+    },
+  });
+
+  await createCallLogSafe({
+    scheduledCallId: call.id,
+    event: "scheduled",
+    message: `Call scheduled for ${call.customer.name}`,
+    details: {
+      customerId: call.customer.id,
+      scheduledAt: call.scheduledAt.toISOString(),
     },
   });
 

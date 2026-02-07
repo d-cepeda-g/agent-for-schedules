@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,7 +27,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Search, Pencil, Trash2 } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, History } from "lucide-react";
 
 type Customer = {
   id: string;
@@ -268,7 +269,7 @@ export default function CustomersPage() {
                   <TableHead>Phone</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Calls</TableHead>
-                  <TableHead className="w-24">Actions</TableHead>
+                  <TableHead className="w-40">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -286,6 +287,15 @@ export default function CustomersPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">
+                        <Link href={`/customers/${customer.id}`}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="View history"
+                          >
+                            <History className="h-4 w-4" />
+                          </Button>
+                        </Link>
                         <Button
                           variant="ghost"
                           size="icon"

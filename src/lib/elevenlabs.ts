@@ -41,13 +41,18 @@ export async function makeOutboundCall(
     to_number: toNumber,
   };
 
-  if (overrides) {
+  const agentOverride: Record<string, unknown> = {};
+  if (overrides?.prompt) {
+    agentOverride.prompt = { prompt: overrides.prompt };
+  }
+  if (overrides?.firstMessage) {
+    agentOverride.first_message = overrides.firstMessage;
+  }
+
+  if (Object.keys(agentOverride).length > 0) {
     body.conversation_initiation_client_data = {
       conversation_config_override: {
-        agent: {
-          prompt: overrides.prompt ? { prompt: overrides.prompt } : undefined,
-          first_message: overrides.firstMessage,
-        },
+        agent: agentOverride,
       },
     };
   }

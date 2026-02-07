@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createCallLogSafe } from "@/lib/call-logs";
 import { syncCallArtifactsFromConversation } from "@/lib/conversation-sync";
 import { db } from "@/lib/db";
 import { getConversationDetail } from "@/lib/elevenlabs";
@@ -70,12 +71,29 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    await createCallLogSafe({
+      scheduledCallId: call.id,
+      event: "webhook_received",
+      message: `Webhook received (${payload.type || "unknown_type"})`,
+      details: { conversationId, payloadType: payload.type || null },
+    });
+
     const detail = await getConversationDetail(conversationId);
     const syncResult = await syncCallArtifactsFromConversation({
       scheduledCallId: call.id,
       conversationId,
       currentStatus: call.status,
       detail,
+    });
+
+    await createCallLogSafe({
+      scheduledCallId: call.id,
+      event: "webhook_synced",
+      message: `Webhook sync complete (${syncResult.status})`,
+      details: {
+        actionItemsCount: syncResult.actionItemsCount,
+        providerStatus: detail.status,
+      },
     });
 
     return NextResponse.json({
@@ -87,6 +105,13 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
+    await createCallLogSafe({
+      scheduledCallId: call.id,
+      event: "webhook_sync_failed",
+      level: "error",
+      message,
+      details: { conversationId, payloadType: payload.type || null },
+    });
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
