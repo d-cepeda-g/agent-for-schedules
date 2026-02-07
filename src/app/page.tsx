@@ -1,65 +1,263 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { format } from "date-fns";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  CalendarPlus,
+  Phone,
+  CheckCircle,
+  XCircle,
+  Clock,
+  Users,
+  ArrowRight,
+} from "lucide-react";
+
+type Call = {
+  id: string;
+  scheduledAt: string;
+  status: string;
+  notes: string;
+  customer: { id: string; name: string; phone: string };
+  evaluation: { id: string; result: string } | null;
+};
+
+type Evaluation = {
+  id: string;
+  result: string;
+  rationale: string;
+  createdAt: string;
+  scheduledCall: {
+    id: string;
+    customer: { name: string };
+  };
+};
+
+export default function DashboardPage() {
+  const [upcomingCalls, setUpcomingCalls] = useState<Call[]>([]);
+  const [recentEvals, setRecentEvals] = useState<Evaluation[]>([]);
+  const [stats, setStats] = useState({
+    totalCalls: 0,
+    pending: 0,
+    completed: 0,
+    successRate: 0,
+  });
+
+  useEffect(() => {
+    fetch("/api/calls")
+      .then((r) => r.json())
+      .then((calls: Call[]) => {
+        const pending = calls.filter((c) => c.status === "pending");
+        const completed = calls.filter((c) => c.status === "completed");
+        const evaluations = calls
+          .filter((c) => c.evaluation)
+          .map((c) => c.evaluation!);
+        const successes = evaluations.filter(
+          (e) => e.result === "success"
+        ).length;
+
+        setUpcomingCalls(
+          pending
+            .sort(
+              (a, b) =>
+                new Date(a.scheduledAt).getTime() -
+                new Date(b.scheduledAt).getTime()
+            )
+            .slice(0, 5)
+        );
+
+        setStats({
+          totalCalls: calls.length,
+          pending: pending.length,
+          completed: completed.length,
+          successRate:
+            evaluations.length > 0
+              ? Math.round((successes / evaluations.length) * 100)
+              : 0,
+        });
+      })
+      .catch(() => {
+        setUpcomingCalls([]);
+        setStats({ totalCalls: 0, pending: 0, completed: 0, successRate: 0 });
+      });
+
+    fetch("/api/evaluations")
+      .then((r) => r.json())
+      .then((evals: Evaluation[]) => setRecentEvals(evals.slice(0, 5)))
+      .catch(() => setRecentEvals([]));
+  }, []);
+
+  const statusColor: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+    pending: "outline",
+    dispatching: "default",
+    dispatched: "default",
+    completed: "secondary",
+    failed: "destructive",
+    cancelled: "destructive",
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <p className="text-muted-foreground">
+          Overview of your scheduled calls and evaluations
+        </p>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardContent className="flex items-center gap-4 p-6">
+            <div className="rounded-lg bg-primary/10 p-3">
+              <Phone className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Total Calls</p>
+              <p className="text-2xl font-bold">{stats.totalCalls}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center gap-4 p-6">
+            <div className="rounded-lg bg-yellow-500/10 p-3">
+              <Clock className="h-5 w-5 text-yellow-600" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Pending</p>
+              <p className="text-2xl font-bold">{stats.pending}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center gap-4 p-6">
+            <div className="rounded-lg bg-green-500/10 p-3">
+              <CheckCircle className="h-5 w-5 text-green-600" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Completed</p>
+              <p className="text-2xl font-bold">{stats.completed}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center gap-4 p-6">
+            <div className="rounded-lg bg-blue-500/10 p-3">
+              <Users className="h-5 w-5 text-blue-600" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Success Rate</p>
+              <p className="text-2xl font-bold">{stats.successRate}%</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <CalendarPlus className="h-5 w-5" />
+              Upcoming Calls
+            </CardTitle>
+            <Link href="/schedule">
+              <Button variant="ghost" size="sm">
+                View all
+                <ArrowRight className="ml-1 h-4 w-4" />
+              </Button>
+            </Link>
+          </CardHeader>
+          <CardContent>
+            {upcomingCalls.length === 0 ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">
+                No upcoming calls.{" "}
+                <Link href="/schedule" className="text-primary underline">
+                  Schedule one
+                </Link>
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {upcomingCalls.map((call) => (
+                  <div
+                    key={call.id}
+                    className="flex items-center justify-between rounded-lg border p-3"
+                  >
+                    <div>
+                      <p className="text-sm font-medium">
+                        {call.customer.name}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {format(
+                          new Date(call.scheduledAt),
+                          "MMM d, h:mm a"
+                        )}
+                      </p>
+                    </div>
+                    <Badge variant={statusColor[call.status] || "outline"}>
+                      {call.status}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <CheckCircle className="h-5 w-5" />
+              Recent Evaluations
+            </CardTitle>
+            <Link href="/calls">
+              <Button variant="ghost" size="sm">
+                View all
+                <ArrowRight className="ml-1 h-4 w-4" />
+              </Button>
+            </Link>
+          </CardHeader>
+          <CardContent>
+            {recentEvals.length === 0 ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">
+                No evaluations yet. Evaluations appear after calls complete.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {recentEvals.map((ev) => (
+                  <Link
+                    key={ev.id}
+                    href={`/calls/${ev.scheduledCall.id}`}
+                    className="flex items-center justify-between rounded-lg border p-3 transition-colors hover:bg-accent"
+                  >
+                    <div>
+                      <p className="text-sm font-medium">
+                        {ev.scheduledCall.customer.name}
+                      </p>
+                      <p className="line-clamp-1 text-xs text-muted-foreground">
+                        {ev.rationale || "No rationale"}
+                      </p>
+                    </div>
+                    {ev.result === "success" ? (
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                    ) : ev.result === "failure" ? (
+                      <XCircle className="h-4 w-4 text-destructive" />
+                    ) : (
+                      <Clock className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

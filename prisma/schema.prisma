@@ -1,0 +1,68 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Customer {
+  id        String   @id @default(cuid())
+  name      String
+  phone     String
+  email     String   @default("")
+  notes     String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  calls ScheduledCall[]
+}
+
+model ScheduledCall {
+  id             String   @id @default(cuid())
+  customerId     String
+  scheduledAt    DateTime
+  status         String   @default("pending") // pending | dispatching | dispatched | completed | failed | cancelled
+  agentId        String   @default("")
+  conversationId String   @default("")
+  batchId        String   @default("")
+  notes          String   @default("")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  customer    Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  evaluation  CallEvaluation?
+  actionItems CallActionItem[]
+}
+
+model CallEvaluation {
+  id              String   @id @default(cuid())
+  scheduledCallId String   @unique
+  conversationId  String
+  result          String   @default("unknown") // success | failure | unknown
+  rationale       String   @default("")
+  transcript      String   @default("")
+  duration        Int      @default(0) // seconds
+  createdAt       DateTime @default(now())
+
+  scheduledCall ScheduledCall @relation(fields: [scheduledCallId], references: [id], onDelete: Cascade)
+}
+
+model CallActionItem {
+  id             String   @id @default(cuid())
+  scheduledCallId String
+  conversationId String
+  source         String   @default("data_collection") // data_collection
+  key            String   @default("")
+  title          String
+  detail         String
+  completed      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  scheduledCall ScheduledCall @relation(fields: [scheduledCallId], references: [id], onDelete: Cascade)
+
+  @@index([scheduledCallId, createdAt])
+  @@index([conversationId])
+}

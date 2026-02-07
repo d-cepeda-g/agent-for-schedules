@@ -1,36 +1,74 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Agent For Schedules
 
-## Getting Started
+A Next.js + Prisma app to:
 
-First, run the development server:
+- Manage customers
+- Schedule outbound AI calls
+- Dispatch calls through ElevenLabs
+- Store transcript + evaluation results
+- Automatically capture transcript-derived items into the system
+
+## 1. Local Setup
 
 ```bash
+npm install
+npm run db:migrate
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 2. Environment Variables
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Set these in `.env`:
 
-## Learn More
+```bash
+DATABASE_URL="file:./dev.db"
 
-To learn more about Next.js, take a look at the following resources:
+ELEVENLABS_API_KEY=...
+ELEVENLABS_AGENT_ID=...
+ELEVENLABS_PHONE_NUMBER_ID=...
+ELEVENLABS_WEBHOOK_SECRET=...
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+`ELEVENLABS_WEBHOOK_SECRET` is required for validating incoming webhook signatures.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 3. ElevenLabs Configuration (Required for Auto Transcript Items)
 
-## Deploy on Vercel
+1. Create/configure your ElevenLabs conversational agent.
+2. In that agent, configure **Data Collection** fields for the items you want saved (examples below).
+3. Configure webhook delivery in ElevenLabs to point to:
+   - `https://<your-domain>/api/elevenlabs/webhook`
+4. Enable post-call events (`post_call_transcription` and/or `post_call_analysis`).
+5. Copy the webhook secret from ElevenLabs into `ELEVENLABS_WEBHOOK_SECRET`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Suggested Data Collection fields:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `follow_up_task`
+- `follow_up_date`
+- `customer_priority`
+- `next_step_owner`
+
+Each non-empty collected value is stored as a `CallActionItem` for that call.
+
+## 4. How Transcript Items Flow Through This App
+
+1. App dispatches call via ElevenLabs.
+2. ElevenLabs sends webhook to `/api/elevenlabs/webhook`.
+3. App verifies webhook signature.
+4. App fetches conversation details from ElevenLabs.
+5. App updates:
+   - `CallEvaluation` (result, rationale, transcript, duration)
+   - `ScheduledCall` status (`completed`/`failed`/`dispatched`)
+   - `CallActionItem` records from `analysis.data_collection_results`
+6. In the call detail page (`/calls/:id`), items appear in **Transcript Items**.
+
+## 5. Security Notes
+
+- In production this app uses basic auth middleware, but `/api/elevenlabs/webhook` is intentionally excluded so ElevenLabs can post events.
+- Webhook authenticity is checked with `ELEVENLABS_WEBHOOK_SECRET`.
+- Keep `.env` out of version control and rotate any exposed API keys.
+
+## 6. Manual Fallback
+
+If a webhook is delayed or missed, you can still fetch results manually from the UI using **Fetch Evaluation** on a call. The same sync logic is used in both paths.
