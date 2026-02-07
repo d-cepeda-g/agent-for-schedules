@@ -29,6 +29,7 @@ function shouldSkip(pathname: string): boolean {
   if (pathname.startsWith("/_next/")) return true;
   if (pathname === "/favicon.ico") return true;
   if (pathname.startsWith("/api/elevenlabs/webhook")) return true;
+  if (pathname.startsWith("/api/tools/")) return true;
   if (pathname.startsWith("/api/health")) return true;
   if (pathname.includes(".") && !pathname.startsWith("/api/")) return true;
   return false;

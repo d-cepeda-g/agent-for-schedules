@@ -38,6 +38,7 @@ A Next.js application for scheduling and managing automated phone calls. It feat
 - `DATABASE_URL` — PostgreSQL connection string (managed by Replit)
 - `ELEVENLABS_API_KEY` — ElevenLabs API key (optional, for call dispatching)
 - `ELEVENLABS_AGENT_ID` — ElevenLabs agent ID (optional)
+- `TOOL_API_KEY` — Shared secret for `/api/tools/*` Agentic Function endpoints
 - `BASIC_AUTH_USERNAME` / `BASIC_AUTH_PASSWORD` — Basic auth credentials (for production)
 - `ENABLE_BASIC_AUTH` — Enable auth in development (`true`/`false`)
 

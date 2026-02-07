@@ -29,11 +29,44 @@ ELEVENLABS_API_KEY=...
 ELEVENLABS_AGENT_ID=...
 ELEVENLABS_PHONE_NUMBER_ID=...
 ELEVENLABS_WEBHOOK_SECRET=...
+TOOL_API_KEY=...
 ```
 
 `ELEVENLABS_WEBHOOK_SECRET` is required for validating incoming webhook signatures.
+`TOOL_API_KEY` is required for Agentic Function tool endpoint authentication.
 
-## 3. ElevenLabs Configuration (Required for Auto Transcript Items)
+## 3. Agentic Function Tool Endpoints (MVP)
+
+All tool routes require one of these headers:
+
+- `x-tool-api-key: <TOOL_API_KEY>`
+- `Authorization: Bearer <TOOL_API_KEY>`
+
+Available endpoints:
+
+1. `POST /api/tools/provider-lookup`
+   - Input: `service_type`, `location`, `min_rating`, `max_results`, optional `origin`, optional `travel_mode`
+2. `POST /api/tools/calendar-check`
+   - Input: `proposed_start`, optional `duration_minutes`, optional `busy_windows`, optional `customer_id`
+3. `POST /api/tools/distance-score`
+   - Input: `origin`, `provider_ids` or `providers`, optional `travel_mode`, optional `distance_weight`
+4. `POST /api/tools/slot-confirm`
+   - Input: `provider_id` (or `provider_name` + `provider_phone`), `slot_start`, optional `duration_minutes`, optional `busy_windows`
+
+Example:
+
+```bash
+curl -X POST http://localhost:3000/api/tools/provider-lookup \
+  -H "Content-Type: application/json" \
+  -H "x-tool-api-key: $TOOL_API_KEY" \
+  -d '{
+    "service_type": "dentist",
+    "location": "San Francisco",
+    "max_results": 3
+  }'
+```
+
+## 4. ElevenLabs Configuration (Required for Auto Transcript Items)
 
 1. Create/configure your ElevenLabs conversational agent.
 2. In that agent, configure **Data Collection** fields for the items you want saved (examples below).
@@ -51,7 +84,7 @@ Suggested Data Collection fields:
 
 Each non-empty collected value is stored as a `CallActionItem` for that call.
 
-## 4. Scheduled Context For Agent
+## 5. Scheduled Context For Agent
 
 When creating a scheduled call, the app stores:
 
@@ -71,7 +104,7 @@ On dispatch, these are sent to ElevenLabs as dynamic variables:
 
 To make the agent use them, reference these variables in your ElevenLabs prompt.
 
-## 5. How Transcript Items Flow Through This App
+## 6. How Transcript Items Flow Through This App
 
 1. App dispatches call via ElevenLabs.
 2. ElevenLabs sends webhook to `/api/elevenlabs/webhook`.
@@ -83,12 +116,13 @@ To make the agent use them, reference these variables in your ElevenLabs prompt.
    - `CallActionItem` records from `analysis.data_collection_results`
 6. In the call detail page (`/calls/:id`), items appear in **Transcript Items**.
 
-## 6. Security Notes
+## 7. Security Notes
 
 - In production this app uses basic auth middleware, but `/api/elevenlabs/webhook` is intentionally excluded so ElevenLabs can post events.
+- `/api/tools/*` endpoints are excluded from basic auth and protected with `TOOL_API_KEY`.
 - Webhook authenticity is checked with `ELEVENLABS_WEBHOOK_SECRET`.
 - Keep `.env` out of version control and rotate any exposed API keys.
 
-## 7. Manual Fallback
+## 8. Manual Fallback
 
 If a webhook is delayed or missed, you can still fetch results manually from the UI using **Fetch Evaluation** on a call. The same sync logic is used in both paths.

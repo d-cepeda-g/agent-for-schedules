@@ -130,7 +130,15 @@ export default function DashboardPage() {
         | null;
 
       if (!res.ok || !payload?.call?.id) {
-        alert(payload?.error || "Failed to trigger quick call");
+        if (payload?.error) {
+          alert(payload.error);
+          return;
+        }
+
+        const fallbackMessage = await res
+          .text()
+          .catch(() => "Failed to trigger quick call");
+        alert(fallbackMessage || "Failed to trigger quick call");
         return;
       }
 
