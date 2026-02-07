@@ -39,5 +39,5 @@ externalPort = 80
 
 [deployment]
 deploymentTarget = "autoscale"
-run = ["bash", "-c", "npx next start -H 0.0.0.0 -p 5000"]
-build = ["bash", "-c", "npx prisma generate && npx prisma migrate deploy && npm run build"]
+run = ["bash", "-c", "npx prisma migrate deploy && npx next start -H 0.0.0.0 -p 5000"]
+build = ["bash", "-c", "npx prisma generate && npm run build"]
