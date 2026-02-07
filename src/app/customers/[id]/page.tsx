@@ -51,6 +51,17 @@ type CustomerHistory = {
   }>;
 };
 
+function isCustomerHistory(payload: unknown): payload is CustomerHistory {
+  if (!payload || typeof payload !== "object") return false;
+  const candidate = payload as Record<string, unknown>;
+  return (
+    typeof candidate.id === "string" &&
+    typeof candidate.name === "string" &&
+    typeof candidate.phone === "string" &&
+    Array.isArray(candidate.calls)
+  );
+}
+
 function getTranscriptPreview(transcript: string): string {
   const cleaned = transcript.trim().replace(/\s+/g, " ");
   if (cleaned.length <= 220) return cleaned;
@@ -77,7 +88,7 @@ export default function CustomerHistoryPage() {
           | null;
 
         if (!active) return;
-        if (!res.ok || !payload || "error" in payload) {
+        if (!res.ok || !payload || "error" in payload || !isCustomerHistory(payload)) {
           setError((payload && "error" in payload ? payload.error : null) || "Failed to load");
           setCustomer(null);
           setLoading(false);
