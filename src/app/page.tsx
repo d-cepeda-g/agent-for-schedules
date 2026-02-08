@@ -20,7 +20,6 @@ import {
   Heart,
   Loader2,
   Phone,
-  Play,
   Sparkles,
   Users,
   X,
@@ -83,6 +82,23 @@ type OnsiteLocationSuggestion = {
   call_action: ProactiveAction;
 };
 
+type ValentineAvailabilityOption = {
+  id: string;
+  restaurant_name: string;
+  available_time: string;
+  cuisine: string;
+  area: string;
+  call_action: ProactiveAction;
+};
+
+type ValentineAvailabilitySummary = {
+  title: string;
+  status: "pending";
+  summary: string;
+  confirm_button_label: string;
+  options: ValentineAvailabilityOption[];
+};
+
 type DashboardInsights = {
   summary: string;
   important_things: string[];
@@ -91,6 +107,7 @@ type DashboardInsights = {
     prompt: string;
     restaurants: RestaurantSuggestion[];
   };
+  valentine_availability_summary: ValentineAvailabilitySummary | null;
   source: "openai" | "fallback";
   source_reason: string | null;
 };
@@ -310,11 +327,12 @@ export default function DashboardPage() {
   const [recentEvals, setRecentEvals] = useState<Evaluation[]>([]);
   const [insights, setInsights] = useState<DashboardInsights | null>(null);
   const [insightsLoading, setInsightsLoading] = useState(true);
-  const [quickCalling, setQuickCalling] = useState(false);
   const [actionCreatingId, setActionCreatingId] = useState<string | null>(null);
+  const [bulkValentineScheduling, setBulkValentineScheduling] = useState(false);
   const [dismissedActionIds, setDismissedActionIds] = useState<string[]>([]);
   const [valentinePanelDismissed, setValentinePanelDismissed] = useState(false);
   const [showOnsiteLocations, setShowOnsiteLocations] = useState(false);
+  const [selectedValentineOptionId, setSelectedValentineOptionId] = useState<string>("");
   const [stats, setStats] = useState({
     totalCalls: 0,
     pending: 0,
@@ -427,6 +445,41 @@ export default function DashboardPage() {
     [insights, dismissedActionIdSet]
   );
 
+  const valentineAvailabilitySummary = useMemo(() => {
+    if (!insights?.valentine_availability_summary) return null;
+    const options = insights.valentine_availability_summary.options.filter(
+      (option) => !dismissedActionIdSet.has(option.call_action.id)
+    );
+    if (options.length < 2) return null;
+    return {
+      ...insights.valentine_availability_summary,
+      options,
+    };
+  }, [insights, dismissedActionIdSet]);
+
+  useEffect(() => {
+    if (!valentineAvailabilitySummary || valentineAvailabilitySummary.options.length === 0) {
+      setSelectedValentineOptionId("");
+      return;
+    }
+
+    const exists = valentineAvailabilitySummary.options.some(
+      (option) => option.id === selectedValentineOptionId
+    );
+    if (!exists) {
+      setSelectedValentineOptionId(valentineAvailabilitySummary.options[0].id);
+    }
+  }, [valentineAvailabilitySummary, selectedValentineOptionId]);
+
+  const selectedValentineOption = useMemo(() => {
+    if (!valentineAvailabilitySummary) return null;
+    return (
+      valentineAvailabilitySummary.options.find(
+        (option) => option.id === selectedValentineOptionId
+      ) || valentineAvailabilitySummary.options[0] || null
+    );
+  }, [valentineAvailabilitySummary, selectedValentineOptionId]);
+
   const visibleOnsiteLocations = useMemo(
     () =>
       onsiteLocations.filter(
@@ -435,134 +488,167 @@ export default function DashboardPage() {
     [onsiteLocations, dismissedActionIdSet]
   );
 
-  async function handleQuickCallDavid() {
-    setQuickCalling(true);
-    try {
-      const res = await fetch("/api/calls/quick-david", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          callReason:
-            "Reminder for clinic appointment at Kaulbachstraße on July 25",
-          callPurpose:
-            "Remind David to set up his clinic appointment at Kaulbachstraße for July 25 and confirm availability at that time",
-          preferredLanguage: "English",
-          notes:
-            "Please remind David Cepeda to book his appointment at the Kaulbachstraße clinic for July 25 and confirm if that time works for him.",
-        }),
-      });
+  async function scheduleProactiveAction(
+    action: ProactiveAction,
+    options?: {
+      navigateOnSuccess?: boolean;
+      fallbackToPrefill?: boolean;
+    }
+  ): Promise<string | null> {
+    const navigateOnSuccess = options?.navigateOnSuccess ?? true;
+    const fallbackToPrefill = options?.fallbackToPrefill ?? true;
+    let targetCustomerId = action.customer_id;
 
-      const payload = (await res.json().catch(() => null)) as
-        | { call?: { id: string }; error?: string }
-        | null;
+    if (!targetCustomerId) {
+      const targetName = action.target_name?.trim() || "";
+      const targetPhone = action.target_phone?.trim() || "";
 
-      if (!res.ok || !payload?.call?.id) {
-        if (payload?.error) {
-          alert(payload.error);
-          return;
+      if (targetName && targetPhone) {
+        const lookupResponse = await fetch(
+          `/api/customers?q=${encodeURIComponent(targetPhone)}`
+        );
+
+        if (lookupResponse.ok) {
+          const candidates = (await lookupResponse.json()) as CustomerLookup[];
+          const normalizedTargetPhone = normalizePhoneForMatch(targetPhone);
+          const exactMatch = candidates.find(
+            (candidate) =>
+              normalizePhoneForMatch(candidate.phone) === normalizedTargetPhone
+          );
+          if (exactMatch?.id) {
+            targetCustomerId = exactMatch.id;
+          }
         }
 
-        const fallbackMessage = await res
-          .text()
-          .catch(() => "Failed to trigger quick call");
-        alert(fallbackMessage || "Failed to trigger quick call");
-        return;
-      }
+        if (!targetCustomerId) {
+          const createCustomerResponse = await fetch("/api/customers", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: targetName,
+              phone: targetPhone,
+              email: "",
+              notes:
+                action.notes ||
+                "Auto-created from dashboard AI restaurant suggestion",
+              preferredLanguage: action.preferred_language || "English",
+            }),
+          });
 
-      router.push(`/calls/${payload.call.id}`);
-    } finally {
-      setQuickCalling(false);
+          if (createCustomerResponse.ok) {
+            const createdCustomer = (await createCustomerResponse.json()) as {
+              id?: string;
+            };
+            if (createdCustomer?.id) {
+              targetCustomerId = createdCustomer.id;
+            }
+          }
+        }
+      }
     }
+
+    if (!targetCustomerId) {
+      if (fallbackToPrefill) {
+        router.push(toPrefillUrl(action));
+      }
+      return null;
+    }
+
+    const scheduledAt = parseIsoFromAction(action);
+    if (Number.isNaN(new Date(scheduledAt).getTime())) {
+      if (fallbackToPrefill) {
+        router.push(toPrefillUrl(action));
+      }
+      return null;
+    }
+
+    const response = await fetch("/api/calls", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        customerId: targetCustomerId,
+        scheduledAt,
+        callReason: action.call_reason,
+        callPurpose: action.call_purpose,
+        preferredLanguage: action.preferred_language || "English",
+        notes: action.notes,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorPayload = (await response.json().catch(() => null)) as
+        | { error?: string }
+        | null;
+      if (errorPayload?.error) {
+        alert(errorPayload.error);
+      }
+      if (fallbackToPrefill) {
+        router.push(toPrefillUrl(action));
+      }
+      return null;
+    }
+
+    const created = (await response.json()) as ScheduledCallResponse;
+    if (created?.id) {
+      if (navigateOnSuccess) {
+        router.push(`/calls/${created.id}`);
+      }
+      return created.id;
+    }
+
+    if (navigateOnSuccess) {
+      router.push("/schedule");
+    }
+    return null;
   }
 
   async function handleRunProactiveAction(action: ProactiveAction) {
     setActionCreatingId(action.id);
     try {
-      let targetCustomerId = action.customer_id;
-
-      if (!targetCustomerId) {
-        const targetName = action.target_name?.trim() || "";
-        const targetPhone = action.target_phone?.trim() || "";
-
-        if (targetName && targetPhone) {
-          const lookupResponse = await fetch(
-            `/api/customers?q=${encodeURIComponent(targetPhone)}`
-          );
-
-          if (lookupResponse.ok) {
-            const candidates = (await lookupResponse.json()) as CustomerLookup[];
-            const normalizedTargetPhone = normalizePhoneForMatch(targetPhone);
-            const exactMatch = candidates.find(
-              (candidate) =>
-                normalizePhoneForMatch(candidate.phone) === normalizedTargetPhone
-            );
-            if (exactMatch?.id) {
-              targetCustomerId = exactMatch.id;
-            }
-          }
-
-          if (!targetCustomerId) {
-            const createCustomerResponse = await fetch("/api/customers", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                name: targetName,
-                phone: targetPhone,
-                email: "",
-                notes:
-                  action.notes ||
-                  "Auto-created from dashboard AI restaurant suggestion",
-                preferredLanguage: action.preferred_language || "English",
-              }),
-            });
-
-            if (createCustomerResponse.ok) {
-              const createdCustomer = (await createCustomerResponse.json()) as {
-                id?: string;
-              };
-              if (createdCustomer?.id) {
-                targetCustomerId = createdCustomer.id;
-              }
-            }
-          }
-        }
-      }
-
-      if (!targetCustomerId) {
-        router.push(toPrefillUrl(action));
-        return;
-      }
-
-      const response = await fetch("/api/calls", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          customerId: targetCustomerId,
-          scheduledAt: parseIsoFromAction(action),
-          callReason: action.call_reason,
-          callPurpose: action.call_purpose,
-          preferredLanguage: action.preferred_language || "English",
-          notes: action.notes,
-        }),
+      await scheduleProactiveAction(action, {
+        navigateOnSuccess: true,
+        fallbackToPrefill: true,
       });
+    } finally {
+      setActionCreatingId(null);
+    }
+  }
 
-      if (!response.ok) {
-        const errorPayload = (await response.json().catch(() => null)) as
-          | { error?: string }
-          | null;
-        if (errorPayload?.error) {
-          alert(errorPayload.error);
+  async function handleScheduleAllValentineCalls() {
+    if (visibleValentineRestaurants.length === 0) return;
+    setBulkValentineScheduling(true);
+    try {
+      let scheduledCount = 0;
+      for (const restaurant of visibleValentineRestaurants.slice(0, 3)) {
+        const createdId = await scheduleProactiveAction(restaurant.call_action, {
+          navigateOnSuccess: false,
+          fallbackToPrefill: false,
+        });
+        if (createdId) {
+          scheduledCount += 1;
         }
-        router.push(toPrefillUrl(action));
-        return;
       }
 
-      const created = (await response.json()) as ScheduledCallResponse;
-      if (created?.id) {
-        router.push(`/calls/${created.id}`);
-      } else {
-        router.push("/schedule");
+      if (scheduledCount > 0) {
+        const insightsRes = await fetch("/api/ai/dashboard-insights");
+        if (insightsRes.ok) {
+          const payload = (await insightsRes.json()) as DashboardInsights;
+          setInsights(payload);
+        }
       }
+    } finally {
+      setBulkValentineScheduling(false);
+    }
+  }
+
+  async function handleConfirmValentineSelectionAndCall() {
+    if (!selectedValentineOption) return;
+    setActionCreatingId(selectedValentineOption.call_action.id);
+    try {
+      await scheduleProactiveAction(selectedValentineOption.call_action, {
+        navigateOnSuccess: true,
+        fallbackToPrefill: true,
+      });
     } finally {
       setActionCreatingId(null);
     }
@@ -586,6 +672,7 @@ export default function DashboardPage() {
     setValentinePanelDismissed(false);
     writeValentinePanelDismissed(false);
     setShowOnsiteLocations(false);
+    setSelectedValentineOptionId("");
   }
 
   function handleDismissValentinePanel() {
@@ -602,57 +689,6 @@ export default function DashboardPage() {
             Overview of your scheduled calls and evaluations
           </p>
         </div>
-        <Button onClick={handleQuickCallDavid} disabled={quickCalling}>
-          <Play className="mr-2 h-4 w-4" />
-          {quickCalling ? "Calling David..." : "Call David Cepeda Now"}
-        </Button>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardContent className="flex items-center gap-4 p-6">
-            <div className="rounded-lg bg-primary/10 p-3">
-              <Phone className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Total Calls</p>
-              <p className="text-2xl font-bold">{stats.totalCalls}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center gap-4 p-6">
-            <div className="rounded-lg bg-yellow-500/10 p-3">
-              <Clock className="h-5 w-5 text-yellow-600" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Pending</p>
-              <p className="text-2xl font-bold">{stats.pending}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center gap-4 p-6">
-            <div className="rounded-lg bg-green-500/10 p-3">
-              <CheckCircle className="h-5 w-5 text-green-600" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Completed</p>
-              <p className="text-2xl font-bold">{stats.completed}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center gap-4 p-6">
-            <div className="rounded-lg bg-blue-500/10 p-3">
-              <Users className="h-5 w-5 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Success Rate</p>
-              <p className="text-2xl font-bold">{stats.successRate}%</p>
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
       <Card>
@@ -828,6 +864,58 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
+      {valentineAvailabilitySummary ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between gap-2">
+              <span>{valentineAvailabilitySummary.title}</span>
+              <Badge variant="outline" className="capitalize">
+                {valentineAvailabilitySummary.status}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm">{valentineAvailabilitySummary.summary}</p>
+            <div className="grid gap-3 md:grid-cols-2">
+              {valentineAvailabilitySummary.options.map((option) => {
+                const selected = selectedValentineOption?.id === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => setSelectedValentineOptionId(option.id)}
+                    className={`rounded-lg border p-3 text-left transition ${
+                      selected
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:bg-accent/40"
+                    }`}
+                  >
+                    <p className="text-sm font-medium">{option.restaurant_name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {option.available_time} - Available
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {option.cuisine} - {option.area}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+            <div>
+              <Button
+                disabled={!selectedValentineOption}
+                onClick={() => void handleConfirmValentineSelectionAndCall()}
+              >
+                {selectedValentineOption &&
+                actionCreatingId === selectedValentineOption.call_action.id
+                  ? "Creating..."
+                  : valentineAvailabilitySummary.confirm_button_label}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
       {!valentinePanelDismissed && visibleValentineRestaurants.length ? (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2">
@@ -835,20 +923,27 @@ export default function DashboardPage() {
               <Heart className="h-5 w-5" />
               Valentine Suggestions
             </CardTitle>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Dismiss Valentine suggestions"
-              onClick={handleDismissValentinePanel}
-            >
-              <X className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => void handleScheduleAllValentineCalls()}
+                disabled={bulkValentineScheduling}
+              >
+                {bulkValentineScheduling
+                  ? "Scheduling..."
+                  : "Schedule 3 Reservation Calls"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Dismiss Valentine suggestions"
+                onClick={handleDismissValentinePanel}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              {insights?.valentines.prompt ??
-                "Valentine's Day is coming. Want me to look for a restaurant reservation?"}
-            </p>
             <div className="grid gap-3 md:grid-cols-3">
               {visibleValentineRestaurants.map((restaurant) => (
                 <div key={restaurant.id} className="rounded-lg border p-3">
@@ -977,6 +1072,53 @@ export default function DashboardPage() {
                 ))}
               </div>
             )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardContent className="flex items-center gap-4 p-6">
+            <div className="rounded-lg bg-primary/10 p-3">
+              <Phone className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Total Calls</p>
+              <p className="text-2xl font-bold">{stats.totalCalls}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center gap-4 p-6">
+            <div className="rounded-lg bg-yellow-500/10 p-3">
+              <Clock className="h-5 w-5 text-yellow-600" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Pending</p>
+              <p className="text-2xl font-bold">{stats.pending}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center gap-4 p-6">
+            <div className="rounded-lg bg-green-500/10 p-3">
+              <CheckCircle className="h-5 w-5 text-green-600" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Completed</p>
+              <p className="text-2xl font-bold">{stats.completed}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center gap-4 p-6">
+            <div className="rounded-lg bg-blue-500/10 p-3">
+              <Users className="h-5 w-5 text-blue-600" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Success Rate</p>
+              <p className="text-2xl font-bold">{stats.successRate}%</p>
+            </div>
           </CardContent>
         </Card>
       </div>

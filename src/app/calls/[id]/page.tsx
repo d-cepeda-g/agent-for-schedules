@@ -4,6 +4,16 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Card,
   CardContent,
@@ -22,6 +32,7 @@ import {
   MessageSquare,
   ListTodo,
   History,
+  Trash2,
 } from "lucide-react";
 
 type CallDetail = {
@@ -66,6 +77,13 @@ type CallDetail = {
   }>;
 };
 
+type CustomerOption = {
+  id: string;
+  name: string;
+  phone: string;
+  preferredLanguage: string;
+};
+
 function isCallDetail(payload: unknown): payload is CallDetail {
   if (!payload || typeof payload !== "object") return false;
 
@@ -92,6 +110,36 @@ function formatLogDetails(details: string): string {
   }
 }
 
+function toLocalDateTimeInputParts(value: string): { date: string; time: string } {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return { date: "", time: "" };
+  }
+
+  const year = parsed.getFullYear();
+  const month = `${parsed.getMonth() + 1}`.padStart(2, "0");
+  const day = `${parsed.getDate()}`.padStart(2, "0");
+  const hours = `${parsed.getHours()}`.padStart(2, "0");
+  const minutes = `${parsed.getMinutes()}`.padStart(2, "0");
+
+  return {
+    date: `${year}-${month}-${day}`,
+    time: `${hours}:${minutes}`,
+  };
+}
+
+function toIsoFromDateTimeInputs(dateInput: string, timeInput: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) return null;
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(timeInput)) return null;
+
+  const [year, month, day] = dateInput.split("-").map(Number);
+  const [hour, minute] = timeInput.split(":").map(Number);
+  const parsed = new Date(year, month - 1, day, hour, minute, 0, 0);
+  if (Number.isNaN(parsed.getTime())) return null;
+
+  return parsed.toISOString();
+}
+
 export default function CallDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -100,8 +148,47 @@ export default function CallDetailPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [dispatching, setDispatching] = useState(false);
   const [fetchingEval, setFetchingEval] = useState(false);
+  const [customers, setCustomers] = useState<CustomerOption[]>([]);
+  const [editing, setEditing] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deletingCall, setDeletingCall] = useState(false);
+  const [editCustomerId, setEditCustomerId] = useState("");
+  const [editDate, setEditDate] = useState("");
+  const [editTime, setEditTime] = useState("");
+  const [editReason, setEditReason] = useState("");
+  const [editPurpose, setEditPurpose] = useState("");
+  const [editLanguage, setEditLanguage] = useState("English");
+  const [editNotes, setEditNotes] = useState("");
 
   const callId = params.id as string;
+
+  function applyCallToEditForm(nextCall: CallDetail) {
+    const { date, time } = toLocalDateTimeInputParts(nextCall.scheduledAt);
+    setEditCustomerId(nextCall.customer.id || "");
+    setEditDate(date);
+    setEditTime(time);
+    setEditReason(nextCall.callReason || "");
+    setEditPurpose(nextCall.callPurpose || "");
+    setEditLanguage(nextCall.preferredLanguage || "English");
+    setEditNotes(nextCall.notes || "");
+  }
+
+  async function refreshCallDetails(): Promise<CallDetail | null> {
+    const response = await fetch(`/api/calls/${callId}`);
+    const data = (await response.json().catch(() => null)) as
+      | CallDetail
+      | { error?: string }
+      | null;
+
+    if (!response.ok || !data || "error" in data || !isCallDetail(data)) {
+      return null;
+    }
+
+    setCall(data);
+    setErrorMessage(null);
+    applyCallToEditForm(data);
+    return data;
+  }
 
   useEffect(() => {
     let active = true;
@@ -133,6 +220,8 @@ export default function CallDetailPage() {
         }
 
         setCall(data);
+        applyCallToEditForm(data);
+        setEditing(false);
         setErrorMessage(null);
         setLoading(false);
       } catch {
@@ -149,6 +238,35 @@ export default function CallDetailPage() {
     };
   }, [callId]);
 
+  useEffect(() => {
+    let active = true;
+
+    async function loadCustomers() {
+      try {
+        const response = await fetch("/api/customers");
+        if (!response.ok) return;
+        const data = (await response.json()) as CustomerOption[];
+        if (!active || !Array.isArray(data)) return;
+        setCustomers(data);
+      } catch {
+        // Keep existing state on transient failure.
+      }
+    }
+
+    void loadCustomers();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  function handleAssignedCustomerChange(nextCustomerId: string) {
+    setEditCustomerId(nextCustomerId);
+    const selected = customers.find((customer) => customer.id === nextCustomerId);
+    if (selected?.preferredLanguage) {
+      setEditLanguage(selected.preferredLanguage);
+    }
+  }
+
   async function handleDispatch() {
     setDispatching(true);
     try {
@@ -160,9 +278,7 @@ export default function CallDetailPage() {
         alert(data.error || "Failed to dispatch");
         return;
       }
-      const refreshed = await fetch(`/api/calls/${callId}`);
-      const refreshedData = (await refreshed.json()) as CallDetail;
-      setCall(refreshedData);
+      await refreshCallDetails();
     } finally {
       setDispatching(false);
     }
@@ -177,11 +293,91 @@ export default function CallDetailPage() {
         alert(data.error || "Failed to fetch evaluation");
         return;
       }
-      const refreshed = await fetch(`/api/calls/${callId}`);
-      const refreshedData = (await refreshed.json()) as CallDetail;
-      setCall(refreshedData);
+      await refreshCallDetails();
     } finally {
       setFetchingEval(false);
+    }
+  }
+
+  async function handleSaveEdits(e: React.FormEvent) {
+    e.preventDefault();
+    if (!call) return;
+
+    if (!editCustomerId) {
+      alert("Please select an assigned contact.");
+      return;
+    }
+
+    const scheduledAt = toIsoFromDateTimeInputs(editDate, editTime);
+    if (!scheduledAt) {
+      alert("Please enter a valid date and time.");
+      return;
+    }
+
+    setSavingEdit(true);
+    try {
+      const response = await fetch(`/api/calls/${call.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerId: editCustomerId,
+          scheduledAt,
+          callReason: editReason,
+          callPurpose: editPurpose,
+          preferredLanguage: editLanguage,
+          notes: editNotes,
+        }),
+      });
+
+      const payload = (await response.json().catch(() => null)) as
+        | CallDetail
+        | { error?: string }
+        | null;
+
+      if (!response.ok || (payload && "error" in payload)) {
+        const message =
+          (payload && "error" in payload ? payload.error : null) ||
+          "Failed to update call";
+        alert(message);
+        return;
+      }
+
+      await refreshCallDetails();
+      setEditing(false);
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  function handleCancelEdit() {
+    if (!call) return;
+    applyCallToEditForm(call);
+    setEditing(false);
+  }
+
+  async function handleDeleteCall() {
+    if (!call) return;
+
+    const confirmed = window.confirm(
+      "Delete this scheduled call? This action marks it as cancelled."
+    );
+    if (!confirmed) return;
+
+    setDeletingCall(true);
+    try {
+      const response = await fetch(`/api/calls/${call.id}`, { method: "DELETE" });
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: string }
+        | null;
+
+      if (!response.ok) {
+        alert(payload?.error || "Failed to delete call");
+        return;
+      }
+
+      router.push("/calls");
+    } finally {
+      setDeletingCall(false);
     }
   }
 
@@ -215,6 +411,7 @@ export default function CallDetailPage() {
     .filter(Boolean) || [];
   const actionItems = call.actionItems || [];
   const logs = call.logs || [];
+  const canEditCall = !["completed", "cancelled"].includes(call.status);
 
   return (
     <div className="space-y-6">
@@ -297,6 +494,143 @@ export default function CallDetailPage() {
                       ? "Fetching..."
                       : "Fetch Evaluation"}
                   </Button>
+                )}
+              </div>
+
+              <div className="rounded-lg border p-4">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium">Edit Scheduled Call</p>
+                  <div className="flex items-center gap-2">
+                    {!editing ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={!canEditCall}
+                        onClick={() => setEditing(true)}
+                      >
+                        Edit
+                      </Button>
+                    ) : null}
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      disabled={!canEditCall || deletingCall || savingEdit}
+                      onClick={() => void handleDeleteCall()}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      {deletingCall ? "Deleting..." : "Delete Call"}
+                    </Button>
+                  </div>
+                </div>
+
+                {!canEditCall ? (
+                  <p className="text-xs text-muted-foreground">
+                    This call can no longer be edited after it is completed or cancelled.
+                  </p>
+                ) : editing ? (
+                  <form onSubmit={handleSaveEdits} className="space-y-3">
+                    <div className="space-y-1.5">
+                      <Label>Assigned contact</Label>
+                      <Select
+                        value={editCustomerId}
+                        onValueChange={handleAssignedCustomerChange}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select contact" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {customers.map((customer) => (
+                            <SelectItem key={customer.id} value={customer.id}>
+                              {customer.name} ({customer.phone})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="edit-call-date">Date</Label>
+                        <Input
+                          id="edit-call-date"
+                          type="date"
+                          value={editDate}
+                          onChange={(e) => setEditDate(e.target.value)}
+                          required
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="edit-call-time">Time</Label>
+                        <Input
+                          id="edit-call-time"
+                          type="time"
+                          value={editTime}
+                          onChange={(e) => setEditTime(e.target.value)}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="edit-call-reason">Reason</Label>
+                      <Input
+                        id="edit-call-reason"
+                        value={editReason}
+                        onChange={(e) => setEditReason(e.target.value)}
+                        placeholder="Reason for the call"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="edit-call-purpose">Purpose</Label>
+                      <Textarea
+                        id="edit-call-purpose"
+                        value={editPurpose}
+                        onChange={(e) => setEditPurpose(e.target.value)}
+                        placeholder="What should the call achieve?"
+                        rows={2}
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="edit-call-language">Preferred language</Label>
+                      <Input
+                        id="edit-call-language"
+                        value={editLanguage}
+                        onChange={(e) => setEditLanguage(e.target.value)}
+                        placeholder="English"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="edit-call-notes">Notes</Label>
+                      <Textarea
+                        id="edit-call-notes"
+                        value={editNotes}
+                        onChange={(e) => setEditNotes(e.target.value)}
+                        placeholder="Extra context for the agent"
+                        rows={3}
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Button type="submit" disabled={savingEdit}>
+                        {savingEdit ? "Saving..." : "Save Changes"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleCancelEdit}
+                        disabled={savingEdit}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </form>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Change date, time, reason, purpose, language, and notes for this call.
+                  </p>
                 )}
               </div>
             </CardContent>

@@ -21,7 +21,7 @@ const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/schedule", label: "Schedule", icon: CalendarPlus },
-  { href: "/customers", label: "Customers", icon: Users },
+  { href: "/customers", label: "Contacts", icon: Users },
   { href: "/calls", label: "Calls", icon: Phone },
 ];
 
@@ -162,6 +162,12 @@ export function MobileNav() {
         </SheetContent>
       </Sheet>
       <span className="ml-3 text-lg font-semibold">Call Scheduler</span>
+      <Link href="/schedule" className="ml-auto">
+        <Button size="sm">
+          <CalendarPlus className="h-4 w-4" />
+          <span className="ml-2 hidden sm:inline">Schedule Call</span>
+        </Button>
+      </Link>
     </div>
   );
 }

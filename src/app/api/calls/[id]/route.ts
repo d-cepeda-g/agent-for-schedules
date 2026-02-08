@@ -5,6 +5,7 @@ import { isPrismaNotFoundError } from "@/lib/prisma-errors";
 import {
   isCallStatus,
   normalizeOptionalString,
+  normalizeRequiredString,
   parseDateInput,
 } from "@/lib/validation";
 
@@ -98,6 +99,26 @@ export async function PATCH(_request: NextRequest, { params }: Params) {
     data.preferredLanguage = preferredLanguage;
   }
 
+  if (body.customerId !== undefined) {
+    const customerId = normalizeRequiredString(body.customerId);
+    if (!customerId) {
+      return NextResponse.json(
+        { error: "customerId must be a non-empty string" },
+        { status: 400 }
+      );
+    }
+
+    const customer = await db.customer.findUnique({
+      where: { id: customerId },
+      select: { id: true },
+    });
+    if (!customer) {
+      return NextResponse.json({ error: "Customer not found" }, { status: 404 });
+    }
+
+    data.customerId = customerId;
+  }
+
   if (Object.keys(data).length === 0) {
     return NextResponse.json(
       { error: "No valid fields provided to update" },
@@ -113,6 +134,25 @@ export async function PATCH(_request: NextRequest, { params }: Params) {
         customer: { select: { id: true, name: true, phone: true } },
       },
     });
+
+    const updatedFields = Object.keys(data).filter((field) => field !== "status");
+
+    if (updatedFields.length > 0) {
+      await createCallLogSafe({
+        scheduledCallId: id,
+        event: "call_updated",
+        message: "Call details updated",
+        details: {
+          fields: updatedFields,
+          customerId: call.customer.id,
+          customerName: call.customer.name,
+          scheduledAt:
+            data.scheduledAt instanceof Date
+              ? data.scheduledAt.toISOString()
+              : undefined,
+        },
+      });
+    }
 
     if (typeof data.status === "string") {
       await createCallLogSafe({
