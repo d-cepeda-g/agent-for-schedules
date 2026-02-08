@@ -32,11 +32,13 @@ ELEVENLABS_WEBHOOK_SECRET=...
 TOOL_API_KEY=...
 OPENAI_API_KEY=...
 OPENAI_MODEL=gpt-4.1-mini
+CALLPILOT_DISPATCH_CONCURRENCY=15
 ```
 
 `ELEVENLABS_WEBHOOK_SECRET` is required for validating incoming webhook signatures.
 `TOOL_API_KEY` is required for Agentic Function tool endpoint authentication.
 `OPENAI_API_KEY` (or `OPENAI_KEY`) enables proactive AI summaries and action suggestions on the main dashboard.
+`CALLPILOT_DISPATCH_CONCURRENCY` controls due-call dispatch parallelism (default 15, max 15).
 
 ## 3. Agentic Function Tool Endpoints (MVP)
 
@@ -68,6 +70,59 @@ curl -X POST http://localhost:3000/api/tools/provider-lookup \
     "max_results": 3
   }'
 ```
+
+## 3.1 Multi-Call Swarm Mode (15 Concurrent Calls)
+
+### Dispatch due calls in parallel
+
+`POST /api/calls/dispatch-due?limit=15&concurrency=15`
+
+- `limit` controls how many pending due calls are scanned.
+- `concurrency` controls how many calls are dispatched in parallel.
+- If `concurrency` is omitted, the API uses `CALLPILOT_DISPATCH_CONCURRENCY`.
+
+### Launch provider outreach campaign
+
+`POST /api/calls/swarm`
+
+Example:
+
+```bash
+curl -X POST http://localhost:3000/api/calls/swarm \
+  -H "Content-Type: application/json" \
+  -d '{
+    "service_type": "dentist",
+    "location": "San Francisco",
+    "min_rating": 4.2,
+    "max_providers": 15,
+    "dispatch_now": true,
+    "concurrency": 15,
+    "notes": "Need the earliest available cleaning this week"
+  }'
+```
+
+This endpoint:
+
+- Selects up to 15 matching providers from the provider directory
+- Creates one scheduled call per provider with a shared `campaign_id` (`batchId` in DB)
+- Dispatches calls in parallel with configurable concurrency (capped at 15)
+- Returns a ranked pre-call shortlist using rating + distance heuristics
+
+### Get ranked campaign results
+
+`GET /api/calls/swarm/:batchId`
+
+Optional query parameters:
+
+- `top` (default 5, max 15)
+- `origin_lat`, `origin_lng`
+- `availability_weight`, `rating_weight`, `distance_weight`
+
+The response includes `top_shortlist` plus `ranked_calls` with:
+
+- earliest extracted availability from transcripts/action items
+- rating and distance scoring
+- weighted final score
 
 ## 4. ElevenLabs Configuration (Required for Auto Transcript Items)
 

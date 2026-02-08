@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const status = searchParams.get("status");
   const customerId = searchParams.get("customerId");
+  const batchId = searchParams.get("batchId");
   const from = searchParams.get("from");
   const to = searchParams.get("to");
 
@@ -24,6 +25,7 @@ export async function GET(request: NextRequest) {
   }
 
   if (customerId) where.customerId = customerId;
+  if (batchId) where.batchId = batchId;
 
   if (from || to) {
     const fromDate = from ? parseDateInput(from) : null;
