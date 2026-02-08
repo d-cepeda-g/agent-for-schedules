@@ -15,9 +15,19 @@ type ResponsesContentItem = {
   text?: string;
 };
 
+type WebSearchSource = {
+  type?: string;
+  url?: string;
+};
+
+type WebSearchAction = {
+  sources?: WebSearchSource[];
+};
+
 type ResponsesOutputItem = {
   type?: string;
   content?: ResponsesContentItem[];
+  action?: WebSearchAction;
 };
 
 type ResponsesApiResponse = {
@@ -35,6 +45,24 @@ type JsonCompletionInput = {
 
 type WebJsonCompletionInput = JsonCompletionInput & {
   searchContextSize?: "low" | "medium" | "high";
+};
+
+export type WebSearchApproximateLocation = {
+  city?: string;
+  country?: string;
+  region?: string;
+  timezone?: string;
+};
+
+type WebSearchTextCompletionInput = WebJsonCompletionInput & {
+  userLocation?: WebSearchApproximateLocation | null;
+  includeSources?: boolean;
+};
+
+export type WebSearchTextCompletionResult = {
+  text: string;
+  sourceUrls: string[];
+  usedWebSearch: boolean;
 };
 
 function readOpenAiApiKey(): string {
@@ -94,6 +122,34 @@ function extractTextFromResponsesPayload(payload: ResponsesApiResponse): string 
   throw new Error("OpenAI web response did not include output text");
 }
 
+function extractWebSearchMetadata(
+  payload: ResponsesApiResponse
+): Pick<WebSearchTextCompletionResult, "sourceUrls" | "usedWebSearch"> {
+  if (!Array.isArray(payload.output)) {
+    return { sourceUrls: [], usedWebSearch: false };
+  }
+
+  const sourceUrls: string[] = [];
+  let usedWebSearch = false;
+
+  for (const item of payload.output) {
+    if (!item || item.type !== "web_search_call") continue;
+    usedWebSearch = true;
+
+    const sources = Array.isArray(item.action?.sources)
+      ? item.action?.sources
+      : [];
+    for (const source of sources) {
+      if (!source || typeof source.url !== "string") continue;
+      const url = source.url.trim();
+      if (!url || sourceUrls.includes(url)) continue;
+      sourceUrls.push(url);
+    }
+  }
+
+  return { sourceUrls, usedWebSearch };
+}
+
 export async function createJsonCompletion(
   input: JsonCompletionInput
 ): Promise<unknown> {
@@ -143,13 +199,25 @@ export async function createJsonCompletionWithWebSearch(
   return extractJsonFromContent(content);
 }
 
-export async function createWebSearchTextCompletion(
-  input: WebJsonCompletionInput
-): Promise<string> {
+export async function createWebSearchTextCompletionWithMetadata(
+  input: WebSearchTextCompletionInput
+): Promise<WebSearchTextCompletionResult> {
   const apiKey = readOpenAiApiKey();
   if (!apiKey) {
     throw new Error("OpenAI API key not configured");
   }
+
+  const userLocation =
+    input.userLocation &&
+    (input.userLocation.city ||
+      input.userLocation.country ||
+      input.userLocation.region ||
+      input.userLocation.timezone)
+      ? {
+          type: "approximate" as const,
+          ...input.userLocation,
+        }
+      : undefined;
 
   const response = await fetch(`${OPENAI_API_BASE_URL}/responses`, {
     method: "POST",
@@ -161,10 +229,14 @@ export async function createWebSearchTextCompletion(
       model: input.model || process.env.OPENAI_MODEL || "gpt-4.1-mini",
       temperature: input.temperature ?? 0.2,
       max_output_tokens: input.maxTokens ?? 900,
+      include: input.includeSources
+        ? ["web_search_call.action.sources"]
+        : undefined,
       tools: [
         {
           type: "web_search_preview",
           search_context_size: input.searchContextSize || "medium",
+          user_location: userLocation,
         },
       ],
       input: [
@@ -190,5 +262,19 @@ export async function createWebSearchTextCompletion(
   }
 
   const payload = (await response.json()) as ResponsesApiResponse;
-  return extractTextFromResponsesPayload(payload);
+  const text = extractTextFromResponsesPayload(payload);
+  const metadata = extractWebSearchMetadata(payload);
+
+  return {
+    text,
+    sourceUrls: metadata.sourceUrls,
+    usedWebSearch: metadata.usedWebSearch,
+  };
+}
+
+export async function createWebSearchTextCompletion(
+  input: WebSearchTextCompletionInput
+): Promise<string> {
+  const result = await createWebSearchTextCompletionWithMetadata(input);
+  return result.text;
 }

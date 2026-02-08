@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { isLikelyPhoneNumber } from "@/lib/validation";
 
 type ChatSuggestion = {
   id: string;
@@ -70,6 +71,10 @@ function makeId(prefix: string): string {
 
 function normalizePhone(phone: string): string {
   return phone.replace(/\D+/g, "");
+}
+
+function hasCallablePhone(phone: string): boolean {
+  return isLikelyPhoneNumber(phone);
 }
 
 function toScheduledIso(dateOnly: string, timeOnly: string): string {
@@ -417,6 +422,7 @@ export function LumiChatWidget() {
                     <div className="mt-3 space-y-2">
                       {message.suggestions.map((suggestion) => {
                         const isScheduling = schedulingId === suggestion.id;
+                        const canSchedule = hasCallablePhone(suggestion.phone);
 
                         return (
                           <div
@@ -440,22 +446,28 @@ export function LumiChatWidget() {
                               {suggestion.reason}
                             </p>
                             <div className="mt-2 flex items-center gap-1.5">
-                              <Button
-                                size="xs"
-                                disabled={Boolean(schedulingId)}
-                                onClick={() =>
-                                  void handleScheduleSuggestion(suggestion)
-                                }
-                              >
-                                {isScheduling ? (
-                                  <>
-                                    <Loader2 className="h-3 w-3 animate-spin" />
-                                    Scheduling
-                                  </>
-                                ) : (
-                                  "Schedule Call"
-                                )}
-                              </Button>
+                              {canSchedule ? (
+                                <Button
+                                  size="xs"
+                                  disabled={Boolean(schedulingId)}
+                                  onClick={() =>
+                                    void handleScheduleSuggestion(suggestion)
+                                  }
+                                >
+                                  {isScheduling ? (
+                                    <>
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                      Scheduling
+                                    </>
+                                  ) : (
+                                    "Schedule Call"
+                                  )}
+                                </Button>
+                              ) : (
+                                <Button size="xs" variant="secondary" disabled>
+                                  No phone available
+                                </Button>
+                              )}
                               <Button asChild size="xs" variant="ghost">
                                 <Link href={buildPrefillHref(suggestion)}>
                                   Edit
