@@ -698,7 +698,8 @@ function sanitizeOnlineResearchPayload(raw: unknown): OnlinePlaceResearch[] {
 function buildOnlineResearchPrompt(
   message: string,
   serviceType: string,
-  location: string
+  location: string,
+  preferPlaces: boolean
 ): { systemPrompt: string; userPrompt: string } {
   const today = new Date();
   const todayIso = today.toISOString().slice(0, 10);
@@ -709,6 +710,9 @@ function buildOnlineResearchPrompt(
     "You are Lumi, researching real businesses on the public web.",
     "Use web search to find currently operating places that match the request.",
     "Only return places with a publicly listed phone number that can be called.",
+    preferPlaces
+      ? "Return venues/business places only (bars, clubs, restaurants, event spaces). Do not return individual personal contacts."
+      : "Prefer venues/business places when the request mentions location, reservation, bars, restaurants, or events.",
     "Do not fabricate places, phones, or addresses.",
     "Return strict JSON with this shape:",
     "{",
@@ -731,6 +735,7 @@ function buildOnlineResearchPrompt(
     `User request: ${message}`,
     `Service intent: ${inferredService}`,
     `Location hint: ${inferredLocation}`,
+    `Place-first mode: ${preferPlaces ? "yes" : "no"}`,
     "Find strong matches where the phone number is available for immediate outreach.",
   ].join("\n");
 
@@ -741,6 +746,7 @@ async function researchPlacesOnline(input: {
   message: string;
   serviceType: string;
   location: string;
+  preferPlaces: boolean;
   context: SuggestionContext;
   existingPhones: Set<string>;
 }): Promise<ChatSuggestion[]> {
@@ -749,7 +755,8 @@ async function researchPlacesOnline(input: {
   const { systemPrompt, userPrompt } = buildOnlineResearchPrompt(
     input.message,
     input.serviceType,
-    input.location
+    input.location,
+    input.preferPlaces
   );
 
   const raw = await createJsonCompletionWithWebSearch({
@@ -781,6 +788,38 @@ async function researchPlacesOnline(input: {
     );
 
   return dedupeSuggestions(suggestions).slice(0, MAX_SUGGESTIONS);
+}
+
+function isLiveWebSuggestion(suggestion: ChatSuggestion): boolean {
+  return suggestion.notes.toLowerCase().includes("source: live web research");
+}
+
+function rankSuggestions(
+  suggestions: ChatSuggestion[],
+  preferPlaces: boolean
+): ChatSuggestion[] {
+  const deduped = dedupeSuggestions(suggestions);
+  if (!preferPlaces) return deduped.slice(0, MAX_SUGGESTIONS);
+
+  const ranked = [...deduped].sort((left, right) => {
+    const score = (item: ChatSuggestion): number => {
+      let value = 0;
+      if (isLiveWebSuggestion(item)) value += 100;
+      if (item.source === "researched_provider") value += 10;
+      if (item.source === "existing_contact") value += 1;
+      return value;
+    };
+    return score(right) - score(left);
+  });
+
+  return ranked.slice(0, MAX_SUGGESTIONS);
+}
+
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message.trim();
+  }
+  return "Unknown error";
 }
 
 function dedupeSuggestions(suggestions: ChatSuggestion[]): ChatSuggestion[] {
@@ -1224,31 +1263,44 @@ export async function POST(request: Request) {
   );
 
   let onlineSuggestions: ChatSuggestion[] = [];
+  let onlineResearchError: string | null = null;
   if (hasOpenAiApiKey()) {
     try {
       onlineSuggestions = await researchPlacesOnline({
         message: contextMessage,
         serviceType: fallbackPlanBase.serviceType,
         location: fallbackPlanBase.location,
+        preferPlaces,
         context: fallbackPlanBase.context,
         existingPhones: contactPhones,
       });
-    } catch {
+    } catch (error) {
       onlineSuggestions = [];
+      onlineResearchError = toErrorMessage(error);
     }
   }
 
+  const fallbackCandidates = preferPlaces
+    ? [
+        ...onlineSuggestions,
+        ...fallbackPlanBase.suggestions.filter(
+          (suggestion) => suggestion.source !== "existing_contact"
+        ),
+        ...fallbackPlanBase.suggestions,
+      ]
+    : [...fallbackPlanBase.suggestions, ...onlineSuggestions];
+
   const fallbackPlan: Plan = {
     ...fallbackPlanBase,
-    suggestions: preferPlaces
-      ? dedupeSuggestions([
-          ...onlineSuggestions,
-          ...fallbackPlanBase.suggestions,
-        ]).slice(0, MAX_SUGGESTIONS)
-      : dedupeSuggestions([
-          ...fallbackPlanBase.suggestions,
-          ...onlineSuggestions,
-        ]).slice(0, MAX_SUGGESTIONS),
+    suggestions: rankSuggestions(fallbackCandidates, preferPlaces),
+    sourceReason:
+      preferPlaces && onlineSuggestions.length === 0
+        ? onlineResearchError
+          ? `Live web place research failed (${onlineResearchError}). Showing best available options.`
+          : "Live web place research returned no callable venues. Showing best available options."
+        : onlineResearchError
+          ? `Live web place research failed (${onlineResearchError}).`
+          : null,
   };
 
   if (!hasOpenAiApiKey()) {
@@ -1271,17 +1323,17 @@ export async function POST(request: Request) {
       contacts,
       fallbackPlan
     );
-    const merged = dedupeSuggestions([
+    const merged = rankSuggestions([
       ...openAiPlan.suggestions,
       ...fallbackPlan.suggestions,
-    ]).slice(0, MAX_SUGGESTIONS);
+    ], preferPlaces);
 
     return NextResponse.json(
       toAssistantResponse({
         ...openAiPlan,
         suggestions: merged,
         source: "openai",
-        sourceReason: null,
+        sourceReason: fallbackPlan.sourceReason,
       })
     );
   } catch (error) {

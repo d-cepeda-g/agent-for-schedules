@@ -206,8 +206,15 @@ export function LumiChatWidget() {
       const suggestions = Array.isArray(payload?.suggestions)
         ? payload.suggestions
         : [];
+      const sourceReason =
+        typeof payload?.sourceReason === "string" && payload.sourceReason.trim()
+          ? payload.sourceReason.trim()
+          : null;
 
-      appendAssistantMessage(text, suggestions);
+      appendAssistantMessage(
+        sourceReason ? `${text}\n\nNote: ${sourceReason}` : text,
+        suggestions
+      );
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to process request";
