@@ -395,9 +395,7 @@ function buildFallbackInsights(calls: Array<{
     evaluation: { result: string; createdAt: Date } | null;
   }): boolean => {
     return (
-      call.status === "completed" ||
-      call.status === "failed" ||
-      Boolean(call.evaluation)
+      call.status === "completed" || Boolean(call.evaluation)
     );
   };
 

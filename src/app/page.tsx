@@ -325,24 +325,10 @@ function toPrefillUrl(action: ProactiveAction): string {
 }
 
 function hasPreviousCallHistory(calls: Call[]): boolean {
-  const completedStatuses = new Set(["completed", "failed"]);
+  const completedStatuses = new Set(["completed"]);
   return calls.some(
     (call) => completedStatuses.has(call.status) || Boolean(call.evaluation)
   );
-}
-
-function isFollowUpAction(action: ProactiveAction): boolean {
-  const searchable = [
-    action.id,
-    action.title,
-    action.description,
-    action.call_reason,
-    action.call_purpose,
-    action.notes,
-  ]
-    .join(" ")
-    .toLowerCase();
-  return searchable.includes("follow up") || searchable.includes("follow-up");
 }
 
 export default function DashboardPage() {
@@ -455,12 +441,8 @@ export default function DashboardPage() {
     const visible = insights?.proactive_actions?.filter(
       (action) => !dismissedActionIdSet.has(action.id)
     ) || [];
-
-    const historyAware = hasPriorCalls
-      ? visible
-      : visible.filter((action) => !isFollowUpAction(action));
-
-    return historyAware.slice(0, 6);
+    if (!hasPriorCalls) return [];
+    return visible.slice(0, 6);
   }, [insights, dismissedActionIdSet, hasPriorCalls]);
 
   const proactiveActionsWithOnsite = useMemo(() => {
