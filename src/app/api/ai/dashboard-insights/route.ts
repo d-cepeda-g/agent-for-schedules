@@ -122,6 +122,20 @@ function sanitizeAction(
   };
 }
 
+function isValentineAction(action: ProactiveAction): boolean {
+  const combined = [
+    action.id,
+    action.title,
+    action.description,
+    action.call_reason,
+    action.call_purpose,
+    action.notes,
+  ]
+    .join(" ")
+    .toLowerCase();
+  return combined.includes("valentine");
+}
+
 function buildFallbackValentineRestaurants(
   targetCustomer: CustomerLite | null,
   valentineDate: string
@@ -209,22 +223,6 @@ function buildFallbackInsights(calls: Array<{
       scheduled_time: "20:00",
     });
   }
-
-  proactiveActions.push({
-    id: "valentine-date-plan",
-    title: "Valentine date reservation planning",
-    description:
-      "Proactively call and shortlist reservation options for Valentine dinner.",
-    customer_id: targetCustomer?.id || null,
-    call_reason: "Valentine reservation planning",
-    call_purpose:
-      "Ask if they want a reservation booked and confirm preferred cuisine, budget, and area.",
-    notes:
-      "Open with: Valentine's Day is coming, want me to find and call 3 restaurant options?",
-    preferred_language: "English",
-    scheduled_date: valentineDate,
-    scheduled_time: "20:00",
-  });
 
   const restaurants = buildFallbackValentineRestaurants(targetCustomer, valentineDate);
 
@@ -319,12 +317,22 @@ function sanitizeInsightsResponse(
     .filter((item): item is RestaurantSuggestion => Boolean(item))
     .slice(0, 3);
 
+  const valentineActionIds = new Set(
+    restaurants.map((restaurant) => restaurant.call_action.id)
+  );
+  const proactiveNonValentine = proactiveActions.filter(
+    (action) =>
+      !valentineActionIds.has(action.id) && !isValentineAction(action)
+  );
+
   return {
     summary,
     important_things:
       importantThings.length > 0 ? importantThings : fallback.important_things,
     proactive_actions:
-      proactiveActions.length > 0 ? proactiveActions : fallback.proactive_actions,
+      proactiveNonValentine.length > 0
+        ? proactiveNonValentine
+        : fallback.proactive_actions,
     valentines: {
       prompt,
       restaurants: restaurants.length > 0 ? restaurants : fallback.valentines.restaurants,
@@ -398,6 +406,7 @@ export async function GET() {
       "id,title,description,customer_id,call_reason,call_purpose,notes,preferred_language,scheduled_date,scheduled_time",
       "scheduled_time must be '20:00' for all actions.",
       "Only use customer_id values that exist in the provided customers list. If unknown, use null.",
+      "Do not include any Valentine's actions in proactive_actions; keep Valentine's actions only in valentines.restaurants[].call_action.",
       "valentines must include prompt and exactly 3 restaurants.",
       "Each valentines restaurant must include id,name,cuisine,area,reservation_hint,call_action.",
       "Each call_action must follow the same action schema and schedule at 20:00.",
