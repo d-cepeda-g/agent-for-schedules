@@ -62,8 +62,8 @@ function NavLinks({
               "flex items-center rounded-lg text-sm font-medium transition-colors",
               collapsed ? "justify-center px-2 py-2.5" : "gap-3 px-3 py-2.5",
               isActive
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
             )}
           >
             <item.icon className="h-4 w-4" />
@@ -96,13 +96,13 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        "hidden md:flex md:flex-col md:border-r md:bg-card md:transition-[width] md:duration-200",
+        "hidden md:flex md:flex-col md:border-r md:border-sidebar-border md:bg-sidebar md:transition-[width] md:duration-200",
         collapsed ? "md:w-20" : "md:w-64"
       )}
     >
       <div
         className={cn(
-          "flex h-16 items-center border-b",
+          "flex h-16 items-center border-b border-sidebar-border",
           collapsed ? "px-2" : "px-4 lg:px-6"
         )}
       >
@@ -146,14 +146,14 @@ export function MobileNav() {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="flex h-16 items-center border-b px-4 md:hidden">
+    <div className="sticky top-0 z-20 flex h-16 items-center border-b border-[rgba(152,131,229,0.22)] bg-white/82 px-4 backdrop-blur md:hidden">
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetTrigger asChild>
           <Button variant="ghost" size="icon">
             <Menu className="h-5 w-5" />
           </Button>
         </SheetTrigger>
-        <SheetContent side="left" className="w-64 p-4">
+        <SheetContent side="left" className="w-64 border-sidebar-border bg-sidebar p-4">
           <div className="mb-6 flex items-center gap-2 px-3">
             <Phone className="h-5 w-5 text-primary" />
             <span className="text-lg font-semibold">Lumi</span>

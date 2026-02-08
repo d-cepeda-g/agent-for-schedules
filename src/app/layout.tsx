@@ -1,10 +1,23 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { JetBrains_Mono, Manrope } from "next/font/google";
 import { CalendarPlus } from "lucide-react";
 import "./globals.css";
 import { Sidebar, MobileNav } from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
 import { DispatchHeartbeat } from "@/components/dispatch-heartbeat";
+
+const manrope = Manrope({
+  subsets: ["latin"],
+  variable: "--font-geist-sans",
+  display: "swap",
+});
+
+const jetBrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-geist-mono",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Lumi",
@@ -18,12 +31,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="antialiased">
+      <body className={`${manrope.variable} ${jetBrainsMono.variable} antialiased`}>
         <DispatchHeartbeat />
         <div className="flex h-screen overflow-hidden">
           <Sidebar />
           <div className="flex flex-1 flex-col overflow-hidden">
-            <div className="hidden h-16 items-center justify-end border-b px-6 md:flex">
+            <div className="sticky top-0 z-20 hidden h-16 items-center justify-end border-b border-[rgba(152,131,229,0.22)] bg-white/82 px-6 backdrop-blur md:flex">
               <Link href="/schedule">
                 <Button size="sm">
                   <CalendarPlus className="mr-2 h-4 w-4" />
