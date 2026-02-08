@@ -81,6 +81,33 @@ type ValentineCallForSummary = {
   }>;
 };
 
+const MONTH_INDEX_BY_NAME: Record<string, number> = {
+  jan: 0,
+  january: 0,
+  feb: 1,
+  february: 1,
+  mar: 2,
+  march: 2,
+  apr: 3,
+  april: 3,
+  may: 4,
+  jun: 5,
+  june: 5,
+  jul: 6,
+  july: 6,
+  aug: 7,
+  august: 7,
+  sep: 8,
+  sept: 8,
+  september: 8,
+  oct: 9,
+  october: 9,
+  nov: 10,
+  november: 10,
+  dec: 11,
+  december: 11,
+};
+
 function toRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
@@ -105,6 +132,248 @@ function formatDateOnly(date: Date): string {
   const month = `${date.getMonth() + 1}`.padStart(2, "0");
   const day = `${date.getDate()}`.padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function formatTimeOnly(date: Date): string {
+  const hour = `${date.getHours()}`.padStart(2, "0");
+  const minute = `${date.getMinutes()}`.padStart(2, "0");
+  return `${hour}:${minute}`;
+}
+
+function parseDateOnly(value: string): Date | null {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(year, month - 1, day, 0, 0, 0, 0);
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.getFullYear() !== year ||
+    parsed.getMonth() !== month - 1 ||
+    parsed.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function normalizeToStartOfDay(date: Date): Date {
+  const normalized = new Date(date);
+  normalized.setHours(0, 0, 0, 0);
+  return normalized;
+}
+
+function inferYearForMonthDay(
+  monthIndex: number,
+  day: number,
+  explicitYear: number | null,
+  today: Date
+): number {
+  if (explicitYear) return explicitYear;
+
+  const currentYear = today.getFullYear();
+  const candidate = new Date(currentYear, monthIndex, day, 0, 0, 0, 0);
+  const todayStart = normalizeToStartOfDay(today);
+  return candidate.getTime() < todayStart.getTime() ? currentYear + 1 : currentYear;
+}
+
+function parseEventDateFromText(
+  text: string,
+  today: Date = new Date()
+): Date | null {
+  const candidates: Date[] = [];
+
+  const isoMatches = text.matchAll(/\b(20\d{2})-(\d{2})-(\d{2})\b/g);
+  for (const match of isoMatches) {
+    const parsed = parseDateOnly(`${match[1]}-${match[2]}-${match[3]}`);
+    if (parsed) candidates.push(parsed);
+  }
+
+  const dottedMatches = text.matchAll(/\b(\d{1,2})\.(\d{1,2})\.(20\d{2})\b/g);
+  for (const match of dottedMatches) {
+    const day = Number(match[1]);
+    const month = Number(match[2]);
+    const year = Number(match[3]);
+    const parsed = new Date(year, month - 1, day, 0, 0, 0, 0);
+    if (!Number.isNaN(parsed.getTime())) {
+      candidates.push(parsed);
+    }
+  }
+
+  const monthPattern =
+    "(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)";
+  const dayMonthRegex = new RegExp(
+    `\\b(\\d{1,2})(?:st|nd|rd|th)?\\s*(?:of\\s+)?(${monthPattern})(?:\\s*,?\\s*(20\\d{2}))?\\b`,
+    "gi"
+  );
+  const monthDayRegex = new RegExp(
+    `\\b(${monthPattern})\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:\\s*,?\\s*(20\\d{2}))?\\b`,
+    "gi"
+  );
+
+  const dayMonthMatches = text.matchAll(dayMonthRegex);
+  for (const match of dayMonthMatches) {
+    const day = Number(match[1]);
+    const monthIndex = MONTH_INDEX_BY_NAME[match[2].toLowerCase()];
+    const explicitYear = typeof match[3] === "string" ? Number(match[3]) : null;
+    if (monthIndex === undefined) continue;
+    const year = inferYearForMonthDay(monthIndex, day, explicitYear, today);
+    const parsed = new Date(year, monthIndex, day, 0, 0, 0, 0);
+    if (!Number.isNaN(parsed.getTime())) {
+      candidates.push(parsed);
+    }
+  }
+
+  const monthDayMatches = text.matchAll(monthDayRegex);
+  for (const match of monthDayMatches) {
+    const monthIndex = MONTH_INDEX_BY_NAME[match[1].toLowerCase()];
+    const day = Number(match[2]);
+    const explicitYear = typeof match[3] === "string" ? Number(match[3]) : null;
+    if (monthIndex === undefined) continue;
+    const year = inferYearForMonthDay(monthIndex, day, explicitYear, today);
+    const parsed = new Date(year, monthIndex, day, 0, 0, 0, 0);
+    if (!Number.isNaN(parsed.getTime())) {
+      candidates.push(parsed);
+    }
+  }
+
+  const normalized = text.toLowerCase();
+  if (normalized.includes("today")) {
+    candidates.push(normalizeToStartOfDay(today));
+  }
+  if (normalized.includes("tomorrow")) {
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    candidates.push(normalizeToStartOfDay(tomorrow));
+  }
+  if (normalized.includes("next week")) {
+    const nextWeek = new Date(today);
+    nextWeek.setDate(nextWeek.getDate() + 7);
+    candidates.push(normalizeToStartOfDay(nextWeek));
+  }
+
+  if (candidates.length === 0) return null;
+
+  const todayStart = normalizeToStartOfDay(today).getTime();
+  const upcoming = candidates
+    .filter((date) => date.getTime() >= todayStart)
+    .sort((left, right) => left.getTime() - right.getTime());
+  if (upcoming.length > 0) {
+    return upcoming[0];
+  }
+
+  return candidates.sort((left, right) => right.getTime() - left.getTime())[0];
+}
+
+function getNextBusinessContactSlot(now: Date = new Date()): Date {
+  const slot = new Date(now);
+  slot.setSeconds(0, 0);
+  slot.setMinutes(slot.getMinutes() + 30);
+  const roundedMinutes = slot.getMinutes() % 5;
+  if (roundedMinutes !== 0) {
+    slot.setMinutes(slot.getMinutes() + (5 - roundedMinutes));
+  }
+
+  if (slot.getDay() === 0) {
+    slot.setDate(slot.getDate() + 1);
+    slot.setHours(9, 30, 0, 0);
+  }
+  if (slot.getDay() === 6) {
+    slot.setDate(slot.getDate() + 2);
+    slot.setHours(9, 30, 0, 0);
+  }
+
+  if (slot.getHours() < 9 || (slot.getHours() === 9 && slot.getMinutes() < 30)) {
+    slot.setHours(9, 30, 0, 0);
+  } else if (slot.getHours() > 17 || (slot.getHours() === 17 && slot.getMinutes() > 0)) {
+    slot.setDate(slot.getDate() + 1);
+    slot.setHours(9, 30, 0, 0);
+    while (slot.getDay() === 0 || slot.getDay() === 6) {
+      slot.setDate(slot.getDate() + 1);
+    }
+  }
+
+  return slot;
+}
+
+function getLatestBusinessSlotBeforeEvent(eventDate: Date): Date {
+  const latest = new Date(eventDate);
+  latest.setDate(latest.getDate() - 1);
+  latest.setHours(16, 30, 0, 0);
+
+  while (latest.getDay() === 0 || latest.getDay() === 6) {
+    latest.setDate(latest.getDate() - 1);
+  }
+
+  return latest;
+}
+
+function deriveSoonOutreachSlot(
+  eventDate: Date | null,
+  now: Date = new Date()
+): { scheduledDate: string; scheduledTime: string } {
+  const soonSlot = getNextBusinessContactSlot(now);
+
+  if (!eventDate) {
+    return {
+      scheduledDate: formatDateOnly(soonSlot),
+      scheduledTime: formatTimeOnly(soonSlot),
+    };
+  }
+
+  const latestBeforeEvent = getLatestBusinessSlotBeforeEvent(eventDate);
+  if (soonSlot.getTime() <= latestBeforeEvent.getTime()) {
+    return {
+      scheduledDate: formatDateOnly(soonSlot),
+      scheduledTime: formatTimeOnly(soonSlot),
+    };
+  }
+
+  const urgentSlot = new Date(now);
+  urgentSlot.setSeconds(0, 0);
+  urgentSlot.setMinutes(urgentSlot.getMinutes() + 30);
+  const roundedMinutes = urgentSlot.getMinutes() % 5;
+  if (roundedMinutes !== 0) {
+    urgentSlot.setMinutes(urgentSlot.getMinutes() + (5 - roundedMinutes));
+  }
+
+  if (urgentSlot.getTime() <= latestBeforeEvent.getTime()) {
+    return {
+      scheduledDate: formatDateOnly(latestBeforeEvent),
+      scheduledTime: formatTimeOnly(latestBeforeEvent),
+    };
+  }
+
+  return {
+    scheduledDate: formatDateOnly(urgentSlot),
+    scheduledTime: formatTimeOnly(urgentSlot),
+  };
+}
+
+function applyOutreachSchedulePolicy(
+  action: ProactiveAction,
+  explicitEventDate: Date | null = null
+): ProactiveAction {
+  const inferredEventDate =
+    explicitEventDate ||
+    parseEventDateFromText(
+      [
+        action.title,
+        action.description,
+        action.call_reason,
+        action.call_purpose,
+        action.notes,
+      ].join("\n")
+    );
+  const slot = deriveSoonOutreachSlot(inferredEventDate);
+  return {
+    ...action,
+    scheduled_date: slot.scheduledDate,
+    scheduled_time: slot.scheduledTime,
+  };
 }
 
 function getDefaultScheduledDate(): string {
@@ -151,8 +420,8 @@ function sanitizeAction(
   const rawDate = normalizeText(record.scheduled_date, fallbackDate);
   const scheduledDate = isDateOnly(rawDate) ? rawDate : fallbackDate;
 
-  const rawTime = normalizeText(record.scheduled_time, "20:00");
-  const scheduledTime = isTimeOnly(rawTime) ? rawTime : "20:00";
+  const rawTime = normalizeText(record.scheduled_time, "10:00");
+  const scheduledTime = isTimeOnly(rawTime) ? rawTime : "10:00";
 
   return {
     id: normalizeText(record.id, fallbackId),
@@ -207,13 +476,6 @@ function getRestaurantProfile(name: string): { cuisine: string; area: string } {
   return { cuisine: "Restaurant", area: "Munich" };
 }
 
-function toDateOnlyLocal(date: Date): string {
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
 function buildValentineAvailabilitySummary(
   calls: ValentineCallForSummary[]
 ): ValentineAvailabilitySummary | null {
@@ -255,6 +517,8 @@ function buildValentineAvailabilitySummary(
   if (selected.length < 2) return null;
 
   const optionTimes = ["20:00", "19:30"];
+  const valentineEventDate = parseDateOnly(getUpcomingValentineDate());
+  const followUpSlot = deriveSoonOutreachSlot(valentineEventDate);
   const options: ValentineAvailabilityOption[] = selected.map((call, index) => {
     const profile = getRestaurantProfile(call.customer.name);
     const availableTime = optionTimes[index] || "20:00";
@@ -278,8 +542,8 @@ function buildValentineAvailabilitySummary(
           "Ask to finalize booking under the selected option.",
         ].join("\n"),
         preferred_language: "English",
-        scheduled_date: toDateOnlyLocal(new Date()),
-        scheduled_time: "20:00",
+        scheduled_date: followUpSlot.scheduledDate,
+        scheduled_time: followUpSlot.scheduledTime,
         target_name: call.customer.name,
         target_phone: call.customer.phone,
       },
@@ -306,6 +570,8 @@ function buildFallbackValentineRestaurants(
   const customerByPhone = new Map(
     customers.map((customer) => [customer.phone.replace(/\D+/g, ""), customer.id])
   );
+  const valentineEventDate = parseDateOnly(valentineDate);
+  const outreachSlot = deriveSoonOutreachSlot(valentineEventDate);
 
   const restaurants = [
     {
@@ -361,8 +627,8 @@ function buildFallbackValentineRestaurants(
           `Hint: ${restaurant.reservation_hint}`,
         ].join("\n"),
         preferred_language: "English",
-        scheduled_date: valentineDate,
-        scheduled_time: "20:00",
+        scheduled_date: outreachSlot.scheduledDate,
+        scheduled_time: outreachSlot.scheduledTime,
         target_name: restaurant.name,
         target_phone: restaurant.phone,
       },
@@ -380,6 +646,7 @@ function buildFallbackInsights(calls: Array<{
 }>, customers: CustomerLite[], reason: string): DashboardInsights {
   const fallbackDate = getDefaultScheduledDate();
   const valentineDate = getUpcomingValentineDate();
+  const followUpSlot = deriveSoonOutreachSlot(null);
 
   const total = calls.length;
   const pending = calls.filter((call) => call.status === "pending").length;
@@ -415,8 +682,8 @@ function buildFallbackInsights(calls: Array<{
         "Confirm progress, collect missing information, and align on the next appointment step.",
       notes: "Use transcript context and ask for concrete next action.",
       preferred_language: "English",
-      scheduled_date: fallbackDate,
-      scheduled_time: "20:00",
+      scheduled_date: followUpSlot.scheduledDate || fallbackDate,
+      scheduled_time: followUpSlot.scheduledTime,
       target_name: mostRecent.customer.name,
       target_phone: mostRecent.customer.phone,
     });
@@ -484,7 +751,7 @@ function sanitizeInsightsResponse(
     )
     .filter((item): item is ProactiveAction => Boolean(item))
     .slice(0, 8)
-    .map((action) => ({ ...action, scheduled_time: "20:00" }));
+    .map((action) => applyOutreachSchedulePolicy(action));
 
   const valentinesRecord = toRecord(record.valentines);
   const prompt = normalizeText(
@@ -524,8 +791,11 @@ function sanitizeInsightsResponse(
         target_phone:
           action.target_phone ||
           (isLikelyPhoneNumber(restaurantPhone) ? restaurantPhone : null),
-        scheduled_time: "20:00",
       };
+      const scheduledAction = applyOutreachSchedulePolicy(
+        hydratedAction,
+        parseDateOnly(getUpcomingValentineDate())
+      );
 
       return {
         id: normalizeText(itemRecord.id, `valentine-${index + 1}`),
@@ -538,7 +808,7 @@ function sanitizeInsightsResponse(
           itemRecord.reservation_hint,
           "Ask for available reservation slots around 20:00."
         ),
-        call_action: hydratedAction,
+        call_action: scheduledAction,
       } satisfies RestaurantSuggestion;
     })
     .filter((item): item is RestaurantSuggestion => Boolean(item))
@@ -668,7 +938,8 @@ export async function GET() {
       customers,
       calls,
       constraints: {
-        scheduled_time_required: "20:00",
+        schedule_policy:
+          "Schedule outreach calls as soon as possible and always before the event date when an event date is known.",
         max_proactive_actions: 6,
       },
     };
@@ -678,13 +949,13 @@ export async function GET() {
       "Return strict JSON with keys: summary, important_things, proactive_actions, valentines.",
       "proactive_actions must be an array of objects with fields:",
       "id,title,description,customer_id,call_reason,call_purpose,notes,preferred_language,scheduled_date,scheduled_time",
-      "scheduled_time must be '20:00' for all actions.",
+      "scheduled_date and scheduled_time must schedule calls soon and before event dates when event dates are known.",
       "Only use customer_id values that exist in the provided customers list. If unknown, use null.",
       "Do not include any Valentine's actions in proactive_actions; keep Valentine's actions only in valentines.restaurants[].call_action.",
       "valentines must include prompt and exactly 3 restaurants.",
       "Each valentines restaurant must include id,name,cuisine,area,reservation_hint,call_action.",
       "Each valentines restaurant should also include address and phone when available.",
-      "Each call_action must follow the same action schema and schedule at 20:00, and may include target_name/target_phone.",
+      "Each call_action must follow the same action schema and may include target_name/target_phone.",
       "Default Valentine's restaurant location to Munich, Germany unless the input data clearly indicates another city.",
       "Be concise and actionable.",
     ].join(" ");

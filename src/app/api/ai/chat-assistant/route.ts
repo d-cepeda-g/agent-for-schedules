@@ -68,6 +68,33 @@ const SERVICE_PATTERNS: Array<{ serviceType: string; keywords: string[] }> = [
   },
 ];
 
+const MONTH_INDEX_BY_NAME: Record<string, number> = {
+  jan: 0,
+  january: 0,
+  feb: 1,
+  february: 1,
+  mar: 2,
+  march: 2,
+  apr: 3,
+  april: 3,
+  may: 4,
+  jun: 5,
+  june: 5,
+  jul: 6,
+  july: 6,
+  aug: 7,
+  august: 7,
+  sep: 8,
+  sept: 8,
+  september: 8,
+  oct: 9,
+  october: 9,
+  nov: 10,
+  november: 10,
+  dec: 11,
+  december: 11,
+};
+
 type ChatSuggestion = {
   id: string;
   source: "existing_contact" | "researched_provider";
@@ -186,66 +213,225 @@ function addDays(base: Date, days: number): Date {
   return next;
 }
 
-function getDefaultScheduledDate(): string {
-  const nextDay = addDays(new Date(), 1);
-  nextDay.setHours(0, 0, 0, 0);
-  return formatDateOnly(nextDay);
+function formatTimeOnly(date: Date): string {
+  const hour = `${date.getHours()}`.padStart(2, "0");
+  const minute = `${date.getMinutes()}`.padStart(2, "0");
+  return `${hour}:${minute}`;
 }
 
-function getDefaultScheduledTime(): string {
-  return "10:00";
+function parseDateOnly(value: string): Date | null {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(year, month - 1, day, 0, 0, 0, 0);
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.getFullYear() !== year ||
+    parsed.getMonth() !== month - 1 ||
+    parsed.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return parsed;
 }
 
-function extractDateFromMessage(message: string, fallback: string): string {
-  const isoMatch = message.match(/\b(20\d{2})-(\d{2})-(\d{2})\b/);
-  if (isoMatch) {
-    const parsed = new Date(
-      Number(isoMatch[1]),
-      Number(isoMatch[2]) - 1,
-      Number(isoMatch[3]),
-      0,
-      0,
-      0,
-      0
-    );
+function normalizeToStartOfDay(date: Date): Date {
+  const next = new Date(date);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function inferYearForMonthDay(
+  monthIndex: number,
+  day: number,
+  explicitYear: number | null,
+  today: Date
+): number {
+  if (explicitYear) return explicitYear;
+  const currentYear = today.getFullYear();
+  const candidate = new Date(currentYear, monthIndex, day, 0, 0, 0, 0);
+  const todayStart = normalizeToStartOfDay(today);
+  return candidate.getTime() < todayStart.getTime() ? currentYear + 1 : currentYear;
+}
+
+function parseEventDateFromText(
+  message: string,
+  today: Date = new Date()
+): Date | null {
+  const candidates: Date[] = [];
+
+  const isoMatches = message.matchAll(/\b(20\d{2})-(\d{2})-(\d{2})\b/g);
+  for (const match of isoMatches) {
+    const parsed = parseDateOnly(`${match[1]}-${match[2]}-${match[3]}`);
+    if (parsed) candidates.push(parsed);
+  }
+
+  const dotMatches = message.matchAll(/\b(\d{1,2})\.(\d{1,2})\.(20\d{2})\b/g);
+  for (const match of dotMatches) {
+    const day = Number(match[1]);
+    const month = Number(match[2]);
+    const year = Number(match[3]);
+    const parsed = new Date(year, month - 1, day, 0, 0, 0, 0);
     if (!Number.isNaN(parsed.getTime())) {
-      return formatDateOnly(parsed);
+      candidates.push(parsed);
+    }
+  }
+
+  const monthPattern =
+    "(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)";
+  const dayMonthRegex = new RegExp(
+    `\\b(\\d{1,2})(?:st|nd|rd|th)?\\s*(?:of\\s+)?(${monthPattern})(?:\\s*,?\\s*(20\\d{2}))?\\b`,
+    "gi"
+  );
+  const monthDayRegex = new RegExp(
+    `\\b(${monthPattern})\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:\\s*,?\\s*(20\\d{2}))?\\b`,
+    "gi"
+  );
+
+  const dayMonthMatches = message.matchAll(dayMonthRegex);
+  for (const match of dayMonthMatches) {
+    const day = Number(match[1]);
+    const monthKey = match[2].toLowerCase();
+    const monthIndex = MONTH_INDEX_BY_NAME[monthKey];
+    const year =
+      typeof match[3] === "string" ? Number(match[3]) : null;
+
+    if (monthIndex === undefined) continue;
+    const resolvedYear = inferYearForMonthDay(monthIndex, day, year, today);
+    const parsed = new Date(resolvedYear, monthIndex, day, 0, 0, 0, 0);
+    if (!Number.isNaN(parsed.getTime())) {
+      candidates.push(parsed);
+    }
+  }
+
+  const monthDayMatches = message.matchAll(monthDayRegex);
+  for (const match of monthDayMatches) {
+    const monthKey = match[1].toLowerCase();
+    const day = Number(match[2]);
+    const monthIndex = MONTH_INDEX_BY_NAME[monthKey];
+    const year =
+      typeof match[3] === "string" ? Number(match[3]) : null;
+
+    if (monthIndex === undefined) continue;
+    const resolvedYear = inferYearForMonthDay(monthIndex, day, year, today);
+    const parsed = new Date(resolvedYear, monthIndex, day, 0, 0, 0, 0);
+    if (!Number.isNaN(parsed.getTime())) {
+      candidates.push(parsed);
     }
   }
 
   const normalized = message.toLowerCase();
-  if (normalized.includes("today")) return formatDateOnly(new Date());
-  if (normalized.includes("tomorrow")) return formatDateOnly(addDays(new Date(), 1));
-  if (normalized.includes("next week")) return formatDateOnly(addDays(new Date(), 7));
+  if (normalized.includes("today")) {
+    candidates.push(normalizeToStartOfDay(today));
+  }
+  if (normalized.includes("tomorrow")) {
+    candidates.push(normalizeToStartOfDay(addDays(today, 1)));
+  }
+  if (normalized.includes("next week")) {
+    candidates.push(normalizeToStartOfDay(addDays(today, 7)));
+  }
 
-  return fallback;
+  if (candidates.length === 0) return null;
+
+  const todayStart = normalizeToStartOfDay(today).getTime();
+  const upcoming = candidates
+    .filter((date) => date.getTime() >= todayStart)
+    .sort((left, right) => left.getTime() - right.getTime());
+
+  if (upcoming.length > 0) {
+    return upcoming[0];
+  }
+
+  return candidates.sort((left, right) => right.getTime() - left.getTime())[0];
 }
 
-function extractTimeFromMessage(message: string, fallback: string): string {
-  const hhmm = message.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
-  if (hhmm) {
-    const hour = Number(hhmm[1]);
-    const minute = Number(hhmm[2]);
-    if (Number.isFinite(hour) && Number.isFinite(minute)) {
-      return `${`${hour}`.padStart(2, "0")}:${`${minute}`.padStart(2, "0")}`;
+function getNextBusinessContactSlot(now: Date = new Date()): Date {
+  const slot = new Date(now);
+  slot.setSeconds(0, 0);
+  slot.setMinutes(slot.getMinutes() + 30);
+  const roundedMinutes = slot.getMinutes() % 5;
+  if (roundedMinutes !== 0) {
+    slot.setMinutes(slot.getMinutes() + (5 - roundedMinutes));
+  }
+
+  if (slot.getDay() === 0) {
+    slot.setDate(slot.getDate() + 1);
+    slot.setHours(9, 30, 0, 0);
+  }
+  if (slot.getDay() === 6) {
+    slot.setDate(slot.getDate() + 2);
+    slot.setHours(9, 30, 0, 0);
+  }
+
+  if (slot.getHours() < 9 || (slot.getHours() === 9 && slot.getMinutes() < 30)) {
+    slot.setHours(9, 30, 0, 0);
+  } else if (slot.getHours() > 17 || (slot.getHours() === 17 && slot.getMinutes() > 0)) {
+    slot.setDate(slot.getDate() + 1);
+    slot.setHours(9, 30, 0, 0);
+    while (slot.getDay() === 0 || slot.getDay() === 6) {
+      slot.setDate(slot.getDate() + 1);
     }
   }
 
-  const ampm = message.match(/\b(1[0-2]|0?[1-9])(?::([0-5]\d))?\s*(am|pm)\b/i);
-  if (ampm) {
-    let hour = Number(ampm[1]) % 12;
-    const minute = Number(ampm[2] || "0");
-    const meridiem = ampm[3].toLowerCase();
-    if (meridiem === "pm") hour += 12;
-    return `${`${hour}`.padStart(2, "0")}:${`${minute}`.padStart(2, "0")}`;
+  return slot;
+}
+
+function getLatestBusinessSlotBeforeEvent(eventDate: Date): Date {
+  const slot = new Date(eventDate);
+  slot.setDate(slot.getDate() - 1);
+  slot.setHours(16, 30, 0, 0);
+
+  while (slot.getDay() === 0 || slot.getDay() === 6) {
+    slot.setDate(slot.getDate() - 1);
   }
 
-  const normalized = message.toLowerCase();
-  if (normalized.includes("morning")) return "09:00";
-  if (normalized.includes("afternoon")) return "14:00";
-  if (normalized.includes("evening") || normalized.includes("tonight")) return "19:00";
+  return slot;
+}
 
-  return fallback;
+function deriveSoonOutreachSlot(
+  eventDate: Date | null,
+  now: Date = new Date()
+): { scheduledDate: string; scheduledTime: string } {
+  const soonSlot = getNextBusinessContactSlot(now);
+
+  if (!eventDate) {
+    return {
+      scheduledDate: formatDateOnly(soonSlot),
+      scheduledTime: formatTimeOnly(soonSlot),
+    };
+  }
+
+  const latestBeforeEvent = getLatestBusinessSlotBeforeEvent(eventDate);
+  if (soonSlot.getTime() <= latestBeforeEvent.getTime()) {
+    return {
+      scheduledDate: formatDateOnly(soonSlot),
+      scheduledTime: formatTimeOnly(soonSlot),
+    };
+  }
+
+  const urgentSlot = new Date(now);
+  urgentSlot.setSeconds(0, 0);
+  urgentSlot.setMinutes(urgentSlot.getMinutes() + 30);
+  const roundedMinutes = urgentSlot.getMinutes() % 5;
+  if (roundedMinutes !== 0) {
+    urgentSlot.setMinutes(urgentSlot.getMinutes() + (5 - roundedMinutes));
+  }
+
+  if (urgentSlot.getTime() <= latestBeforeEvent.getTime()) {
+    return {
+      scheduledDate: formatDateOnly(latestBeforeEvent),
+      scheduledTime: formatTimeOnly(latestBeforeEvent),
+    };
+  }
+
+  return {
+    scheduledDate: formatDateOnly(urgentSlot),
+    scheduledTime: formatTimeOnly(urgentSlot),
+  };
 }
 
 function detectPreferredLanguage(message: string): string {
@@ -472,13 +658,10 @@ function findProviderByName(
 function buildFallbackPlan(
   message: string,
   contextMessage: string,
+  eventDate: Date | null,
   contacts: Contact[]
 ): Plan {
-  const defaultDate = getDefaultScheduledDate();
-  const defaultTime = getDefaultScheduledTime();
-
-  const scheduledDate = extractDateFromMessage(contextMessage, defaultDate);
-  const scheduledTime = extractTimeFromMessage(contextMessage, defaultTime);
+  const scheduleSlot = deriveSoonOutreachSlot(eventDate);
   const preferredLanguage = detectPreferredLanguage(contextMessage);
   const serviceType = detectServiceType(contextMessage);
   const location = detectLocation(contextMessage);
@@ -487,8 +670,8 @@ function buildFallbackPlan(
     callReason: buildCallReason(contextMessage, serviceType),
     callPurpose: buildCallPurpose(message || contextMessage),
     preferredLanguage,
-    scheduledDate,
-    scheduledTime,
+    scheduledDate: scheduleSlot.scheduledDate,
+    scheduledTime: scheduleSlot.scheduledTime,
   };
 
   const messageLower = contextMessage.toLowerCase();
@@ -571,6 +754,8 @@ function buildFallbackPlan(
 async function buildOpenAiPlan(
   message: string,
   history: ChatHistoryItem[],
+  contextMessage: string,
+  eventDate: Date | null,
   contacts: Contact[],
   fallback: Plan
 ): Promise<Plan> {
@@ -586,6 +771,7 @@ async function buildOpenAiPlan(
     "You are Lumi, an operations scheduler assistant.",
     "Choose the best people or businesses to contact based on the user request.",
     "Prefer exact existing contacts when available, otherwise pick researched providers.",
+    "Outreach calls must be scheduled as soon as possible and before the event date.",
     "Return strict JSON with this shape:",
     "{",
     '  "reply": string,',
@@ -674,22 +860,40 @@ async function buildOpenAiPlan(
     fallback.context.preferredLanguage
   );
 
-  const scheduledDateRaw = normalizeText(payload.scheduled_date, fallback.context.scheduledDate);
-  const scheduledDate = isDateOnly(scheduledDateRaw)
-    ? scheduledDateRaw
-    : fallback.context.scheduledDate;
+  const modelScheduledDateRaw = normalizeText(
+    payload.scheduled_date,
+    fallback.context.scheduledDate
+  );
+  const modelScheduledTimeRaw = normalizeText(
+    payload.scheduled_time,
+    fallback.context.scheduledTime
+  );
+  const modelScheduleDate = isDateOnly(modelScheduledDateRaw)
+    ? parseDateOnly(modelScheduledDateRaw)
+    : null;
+  const modelScheduleTime = isTimeOnly(modelScheduledTimeRaw)
+    ? modelScheduledTimeRaw
+    : null;
 
-  const scheduledTimeRaw = normalizeText(payload.scheduled_time, fallback.context.scheduledTime);
-  const scheduledTime = isTimeOnly(scheduledTimeRaw)
-    ? scheduledTimeRaw
-    : fallback.context.scheduledTime;
+  const combinedScheduleSource = [
+    contextMessage,
+    callReason,
+    callPurpose,
+    modelScheduleDate ? formatDateOnly(modelScheduleDate) : "",
+    modelScheduleTime || "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const finalEventDate = eventDate || parseEventDateFromText(combinedScheduleSource);
+  const scheduleSlot = deriveSoonOutreachSlot(finalEventDate);
 
   const context: SuggestionContext = {
     callReason,
     callPurpose,
     preferredLanguage,
-    scheduledDate,
-    scheduledTime,
+    scheduledDate: scheduleSlot.scheduledDate,
+    scheduledTime: scheduleSlot.scheduledTime,
   };
 
   const serviceType = normalizeText(payload.service_type, fallback.serviceType);
@@ -807,6 +1011,8 @@ export async function POST(request: Request) {
   }
   const history = parseHistory(body.history);
   const contextMessage = buildContextMessage(message, history);
+  const eventDate =
+    parseEventDateFromText(message) || parseEventDateFromText(contextMessage);
 
   const contacts = await db.customer.findMany({
     orderBy: { updatedAt: "desc" },
@@ -820,7 +1026,12 @@ export async function POST(request: Request) {
     },
   });
 
-  const fallbackPlan = buildFallbackPlan(message, contextMessage, contacts);
+  const fallbackPlan = buildFallbackPlan(
+    message,
+    contextMessage,
+    eventDate,
+    contacts
+  );
 
   if (!hasOpenAiApiKey()) {
     return NextResponse.json(
@@ -836,6 +1047,8 @@ export async function POST(request: Request) {
     const openAiPlan = await buildOpenAiPlan(
       message,
       history,
+      contextMessage,
+      eventDate,
       contacts,
       fallbackPlan
     );
