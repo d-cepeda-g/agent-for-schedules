@@ -20,6 +20,7 @@ type CustomerHistory = {
   name: string;
   phone: string;
   email: string;
+  preferredLanguage: string;
   calls: Array<{
     id: string;
     status: string;
@@ -154,6 +155,9 @@ export default function CustomerHistoryPage() {
           <CardDescription>
             {customer.phone}
             {customer.email ? ` · ${customer.email}` : ""}
+            {customer.preferredLanguage
+              ? ` · Preferred language: ${customer.preferredLanguage}`
+              : ""}
           </CardDescription>
         </CardHeader>
       </Card>

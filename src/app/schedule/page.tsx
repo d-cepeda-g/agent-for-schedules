@@ -29,6 +29,7 @@ type Customer = {
   id: string;
   name: string;
   phone: string;
+  preferredLanguage: string;
 };
 
 type ScheduledCall = {
@@ -117,6 +118,14 @@ export default function SchedulePage() {
 
     if (prefillCustomerId && customers.some((customer) => customer.id === prefillCustomerId)) {
       setCustomerId(prefillCustomerId);
+      if (!prefillLanguage) {
+        const selectedCustomer = customers.find(
+          (customer) => customer.id === prefillCustomerId
+        );
+        if (selectedCustomer?.preferredLanguage) {
+          setPreferredLanguage(selectedCustomer.preferredLanguage);
+        }
+      }
     }
 
     hasAppliedPrefill.current = true;
@@ -157,6 +166,16 @@ export default function SchedulePage() {
 
   function refreshDayCalls() {
     setRefreshKey((value) => value + 1);
+  }
+
+  function handleCustomerSelection(selectedCustomerId: string) {
+    setCustomerId(selectedCustomerId);
+    const selectedCustomer = customers.find(
+      (customer) => customer.id === selectedCustomerId
+    );
+    if (selectedCustomer?.preferredLanguage) {
+      setPreferredLanguage(selectedCustomer.preferredLanguage);
+    }
   }
 
   async function handleSchedule(e: React.FormEvent) {
@@ -271,7 +290,10 @@ export default function SchedulePage() {
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Customer</Label>
-                    <Select value={customerId} onValueChange={setCustomerId}>
+                    <Select
+                      value={customerId}
+                      onValueChange={handleCustomerSelection}
+                    >
                       <SelectTrigger>
                         <SelectValue placeholder="Select customer" />
                       </SelectTrigger>
@@ -316,6 +338,7 @@ export default function SchedulePage() {
                         <SelectItem value="Spanish">Spanish</SelectItem>
                         <SelectItem value="German">German</SelectItem>
                         <SelectItem value="French">French</SelectItem>
+                        <SelectItem value="Turkish">Turkish</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

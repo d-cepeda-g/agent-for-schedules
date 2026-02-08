@@ -96,6 +96,8 @@ When creating a scheduled call, the app stores:
 - `preferredLanguage`
 - `notes`
 
+If `preferredLanguage` is omitted while creating a call, the app now defaults to the selected customer's `preferredLanguage`.
+
 On dispatch, these are sent to ElevenLabs as dynamic variables:
 
 - `customer_name`

@@ -76,6 +76,17 @@ export async function PATCH(_request: NextRequest, { params }: Params) {
     data.notes = notes;
   }
 
+  if (body.preferredLanguage !== undefined) {
+    const preferredLanguage = normalizeOptionalString(body.preferredLanguage);
+    if (preferredLanguage === null || preferredLanguage.length === 0) {
+      return NextResponse.json(
+        { error: "Preferred language must be a non-empty string" },
+        { status: 400 }
+      );
+    }
+    data.preferredLanguage = preferredLanguage;
+  }
+
   if (Object.keys(data).length === 0) {
     return NextResponse.json(
       { error: "No valid fields provided to update" },

@@ -7,6 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Card,
   CardContent,
   CardHeader,
@@ -35,6 +42,7 @@ type Customer = {
   phone: string;
   email: string;
   notes: string;
+  preferredLanguage: string;
   createdAt: string;
   _count: { calls: number };
 };
@@ -44,9 +52,16 @@ type FormData = {
   phone: string;
   email: string;
   notes: string;
+  preferredLanguage: string;
 };
 
-const EMPTY_FORM: FormData = { name: "", phone: "", email: "", notes: "" };
+const EMPTY_FORM: FormData = {
+  name: "",
+  phone: "",
+  email: "",
+  notes: "",
+  preferredLanguage: "English",
+};
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -133,6 +148,7 @@ export default function CustomersPage() {
       phone: customer.phone,
       email: customer.email,
       notes: customer.notes,
+      preferredLanguage: customer.preferredLanguage || "English",
     });
     setEditingId(customer.id);
     setDialogOpen(true);
@@ -219,6 +235,26 @@ export default function CustomersPage() {
                 />
               </div>
               <div className="space-y-2">
+                <Label>Preferred language</Label>
+                <Select
+                  value={formData.preferredLanguage}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, preferredLanguage: value })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select language" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="English">English</SelectItem>
+                    <SelectItem value="Spanish">Spanish</SelectItem>
+                    <SelectItem value="German">German</SelectItem>
+                    <SelectItem value="French">French</SelectItem>
+                    <SelectItem value="Turkish">Turkish</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
                 <Label htmlFor="notes">Notes</Label>
                 <Textarea
                   id="notes"
@@ -268,6 +304,7 @@ export default function CustomersPage() {
                   <TableHead>Name</TableHead>
                   <TableHead>Phone</TableHead>
                   <TableHead>Email</TableHead>
+                  <TableHead>Language</TableHead>
                   <TableHead>Calls</TableHead>
                   <TableHead className="w-40">Actions</TableHead>
                 </TableRow>
@@ -280,6 +317,7 @@ export default function CustomersPage() {
                     </TableCell>
                     <TableCell>{customer.phone}</TableCell>
                     <TableCell>{customer.email || "—"}</TableCell>
+                    <TableCell>{customer.preferredLanguage || "English"}</TableCell>
                     <TableCell>
                       <Badge variant="secondary">
                         {customer._count.calls}

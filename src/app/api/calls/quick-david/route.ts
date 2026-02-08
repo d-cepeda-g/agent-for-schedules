@@ -13,8 +13,6 @@ export async function POST(request: NextRequest) {
     const callPurpose =
       normalizeOptionalString(body?.callPurpose) ||
       "Remind David to set up his clinic appointment at Kaulbachstraße for July 25 and confirm availability at that time";
-    const preferredLanguage =
-      normalizeOptionalString(body?.preferredLanguage) || "English";
     const notes =
       normalizeOptionalString(body?.notes) ||
       "Please remind David Cepeda to book his appointment at the Kaulbachstraße clinic for July 25 and confirm if that time works for him.";
@@ -43,7 +41,10 @@ export async function POST(request: NextRequest) {
         notes,
         callReason,
         callPurpose,
-        preferredLanguage,
+        preferredLanguage:
+          normalizeOptionalString(body?.preferredLanguage) ||
+          customer.preferredLanguage ||
+          "English",
         agentId: process.env.ELEVENLABS_AGENT_ID || "",
       },
     });

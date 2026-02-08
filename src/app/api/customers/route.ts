@@ -37,6 +37,8 @@ export async function POST(request: NextRequest) {
   const phone = normalizeRequiredString(body.phone);
   const email = normalizeOptionalString(body.email) ?? "";
   const notes = normalizeOptionalString(body.notes) ?? "";
+  const preferredLanguage =
+    normalizeOptionalString(body.preferredLanguage) || "English";
 
   if (!name || !phone) {
     return NextResponse.json(
@@ -53,7 +55,7 @@ export async function POST(request: NextRequest) {
   }
 
   const customer = await db.customer.create({
-    data: { name, phone, email, notes },
+    data: { name, phone, email, notes, preferredLanguage },
   });
 
   return NextResponse.json(customer, { status: 201 });

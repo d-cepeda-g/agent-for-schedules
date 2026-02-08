@@ -65,8 +65,7 @@ export async function POST(request: NextRequest) {
   const notes = normalizeOptionalString(body.notes) ?? "";
   const callReason = normalizeOptionalString(body.callReason) ?? "";
   const callPurpose = normalizeOptionalString(body.callPurpose) ?? "";
-  const preferredLanguage =
-    normalizeOptionalString(body.preferredLanguage) ?? "English";
+  const preferredLanguageFromBody = normalizeOptionalString(body.preferredLanguage);
 
   if (!customerId || !scheduledAt) {
     return NextResponse.json(
@@ -87,7 +86,10 @@ export async function POST(request: NextRequest) {
       notes,
       callReason,
       callPurpose,
-      preferredLanguage,
+      preferredLanguage:
+        preferredLanguageFromBody && preferredLanguageFromBody.length > 0
+          ? preferredLanguageFromBody
+          : customer.preferredLanguage || "English",
       agentId: process.env.ELEVENLABS_AGENT_ID || "",
     },
     include: {
