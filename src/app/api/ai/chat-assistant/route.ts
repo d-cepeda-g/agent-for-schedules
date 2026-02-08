@@ -580,6 +580,67 @@ function detectLocation(message: string): string {
   return "";
 }
 
+const NON_LOCATION_START_WORDS = new Set(["a", "an", "the", "my", "our", "this", "that"]);
+const NON_LOCATION_TERMS = new Set([
+  "bar",
+  "restaurant",
+  "cafe",
+  "bistro",
+  "club",
+  "party",
+  "event",
+  "birthday",
+  "reservation",
+  "table",
+  "dinner",
+  "lunch",
+  "brunch",
+  "rooftop",
+]);
+
+function extractFreeformLocation(message: string): string {
+  const compact = message.replace(/\s+/g, " ").trim();
+  if (!compact) return "";
+
+  const matches = compact.matchAll(/\b(?:in|at|near)\s+([a-zA-Z][a-zA-Z\s.'-]{1,60})/gi);
+  let best = "";
+
+  for (const match of matches) {
+    let candidate = (match[1] || "").trim();
+    candidate = candidate.split(/(?:\bfor\b|\bon\b|\bwith\b|\bthat\b|\bwhere\b|[,.;!?])/i)[0].trim();
+    if (!candidate) continue;
+
+    const tokens = candidate.toLowerCase().split(/\s+/).filter(Boolean);
+    if (tokens.length === 0 || tokens.length > 5) continue;
+    if (NON_LOCATION_START_WORDS.has(tokens[0])) continue;
+    if (tokens.some((token) => NON_LOCATION_TERMS.has(token))) continue;
+
+    best = candidate;
+  }
+
+  if (!best) return "";
+
+  return best
+    .split(/\s+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function resolveSearchLocation(
+  latestUserMessage: string,
+  contextMessage: string,
+  preferPlaces: boolean
+): string {
+  const explicitFromUser = detectLocation(latestUserMessage) || extractFreeformLocation(latestUserMessage);
+  if (explicitFromUser) return explicitFromUser;
+
+  if (!preferPlaces) {
+    return detectLocation(contextMessage) || extractFreeformLocation(contextMessage);
+  }
+
+  return "Munich";
+}
+
 function tokenizeMessage(message: string): string[] {
   return message
     .toLowerCase()
@@ -790,6 +851,7 @@ function buildOnlineResearchPrompt(
     `Service intent: ${inferredService}`,
     `Location hint: ${inferredLocation}`,
     `Place-first mode: ${preferPlaces ? "yes" : "no"}`,
+    `Use this location for venue search unless user explicitly requests a different city: ${inferredLocation}.`,
     "Find strong matches where the phone number is available for immediate outreach.",
   ].join("\n");
 
@@ -876,6 +938,16 @@ function toErrorMessage(error: unknown): string {
   return "Unknown error";
 }
 
+function ensureLocationMention(
+  reply: string,
+  location: string,
+  preferPlaces: boolean
+): string {
+  if (!preferPlaces || !location.trim()) return reply;
+  if (reply.toLowerCase().includes(location.toLowerCase())) return reply;
+  return `${reply.trim()} Search location: ${location}.`;
+}
+
 function dedupeSuggestions(suggestions: ChatSuggestion[]): ChatSuggestion[] {
   const seen = new Set<string>();
   const deduped: ChatSuggestion[] = [];
@@ -932,12 +1004,14 @@ function buildFallbackPlan(
   message: string,
   contextMessage: string,
   eventDate: Date | null,
+  preferPlaces: boolean,
+  searchLocation: string,
   contacts: Contact[]
 ): Plan {
   const scheduleSlot = deriveSoonOutreachSlot(eventDate);
   const preferredLanguage = detectPreferredLanguage(contextMessage);
-  const serviceType = detectServiceType(contextMessage);
-  const location = detectLocation(contextMessage);
+  const serviceType = detectServiceType(message) || detectServiceType(contextMessage);
+  const location = searchLocation;
 
   const context: SuggestionContext = {
     callReason: buildCallReason(contextMessage, serviceType),
@@ -972,7 +1046,8 @@ function buildFallbackPlan(
   );
 
   const shouldResearchProviders =
-    Boolean(serviceType) || Boolean(location) || contactSuggestions.length === 0;
+    !preferPlaces &&
+    (Boolean(serviceType) || Boolean(location) || contactSuggestions.length === 0);
   const providerSuggestions = shouldResearchProviders
     ? searchProviders({
         serviceType: serviceType || undefined,
@@ -1006,12 +1081,18 @@ function buildFallbackPlan(
     ];
   }
 
-  const reply =
-    suggestions.length > 0
+  const replyBase = preferPlaces
+    ? suggestions.length > 0
+      ? `I found ${suggestions.length} place${
+          suggestions.length > 1 ? "s" : ""
+        } you can call for this request.`
+      : "I could not identify callable venues from the current data."
+    : suggestions.length > 0
       ? `I found ${suggestions.length} contact${
           suggestions.length > 1 ? "s" : ""
         } to call for this request.`
       : "I could not identify a reliable contact from the current data.";
+  const reply = ensureLocationMention(replyBase, location, preferPlaces);
 
   return {
     reply,
@@ -1034,6 +1115,7 @@ async function buildOpenAiPlan(
   fallback: Plan
 ): Promise<Plan> {
   const providers = getProviderDirectory();
+  const providersForPrompt = preferPlaces ? [] : providers;
   const phoneToContact = new Map(
     contacts.map((contact) => [normalizePhone(contact.phone), contact])
   );
@@ -1108,7 +1190,7 @@ async function buildOpenAiPlan(
     "",
     "Provider directory JSON:",
     JSON.stringify(
-      providers.map((provider) => ({
+      providersForPrompt.map((provider) => ({
         id: provider.id,
         name: provider.name,
         phone: provider.phone,
@@ -1211,11 +1293,13 @@ async function buildOpenAiPlan(
     }
 
     let matchedProvider: ProviderRecord | null = null;
-    if (phone) {
-      matchedProvider = phoneToProvider.get(normalizePhone(phone)) || null;
-    }
-    if (!matchedProvider && name) {
-      matchedProvider = findProviderByName(providers, name);
+    if (!preferPlaces) {
+      if (phone) {
+        matchedProvider = phoneToProvider.get(normalizePhone(phone)) || null;
+      }
+      if (!matchedProvider && name) {
+        matchedProvider = findProviderByName(providers, name);
+      }
     }
 
     if (matchedProvider) {
@@ -1227,36 +1311,44 @@ async function buildOpenAiPlan(
       continue;
     }
 
-    if (name && phone && isLikelyPhoneNumber(phone)) {
+    if (!preferPlaces && name && phone && isLikelyPhoneNumber(phone)) {
       openAiSuggestions.push(buildAdHocSuggestion(name, phone, context, reason));
     }
   }
 
-  let suggestions = dedupeSuggestions(openAiSuggestions).slice(0, MAX_SUGGESTIONS);
+  let suggestions = rankSuggestions(openAiSuggestions, preferPlaces);
   if (suggestions.length === 0) {
-    const researchedProviders = searchProviders({
-      serviceType: serviceType || undefined,
-      locationQuery: location || undefined,
-      minRating: 4.2,
-      maxResults: MAX_SUGGESTIONS,
-    }).map((provider) => {
-      const mappedCustomerId =
-        phoneToContact.get(normalizePhone(provider.phone))?.id || null;
-      return buildSuggestionFromProvider(
-        provider,
-        context,
-        mappedCustomerId,
-        `Good match for this request in ${provider.city}.`
-      );
-    });
+    if (preferPlaces) {
+      suggestions = rankSuggestions(fallback.suggestions, true);
+    } else {
+      const researchedProviders = searchProviders({
+        serviceType: serviceType || undefined,
+        locationQuery: location || undefined,
+        minRating: 4.2,
+        maxResults: MAX_SUGGESTIONS,
+      }).map((provider) => {
+        const mappedCustomerId =
+          phoneToContact.get(normalizePhone(provider.phone))?.id || null;
+        return buildSuggestionFromProvider(
+          provider,
+          context,
+          mappedCustomerId,
+          `Good match for this request in ${provider.city}.`
+        );
+      });
 
-    suggestions = dedupeSuggestions([
-      ...researchedProviders,
-      ...fallback.suggestions,
-    ]).slice(0, MAX_SUGGESTIONS);
+      suggestions = rankSuggestions([
+        ...researchedProviders,
+        ...fallback.suggestions,
+      ], false);
+    }
   }
 
-  const reply = normalizeText(payload.reply, fallback.reply);
+  const reply = ensureLocationMention(
+    normalizeText(payload.reply, fallback.reply),
+    fallback.location,
+    preferPlaces
+  );
 
   return {
     reply,
@@ -1293,6 +1385,11 @@ export async function POST(request: Request) {
   const eventDate =
     parseEventDateFromText(message) || parseEventDateFromText(contextMessage);
   const preferPlaces = isVenueLikeRequest(contextMessage);
+  const searchLocation = resolveSearchLocation(
+    message,
+    contextMessage,
+    preferPlaces
+  );
 
   const contacts = await db.customer.findMany({
     orderBy: { updatedAt: "desc" },
@@ -1310,6 +1407,8 @@ export async function POST(request: Request) {
     message,
     contextMessage,
     eventDate,
+    preferPlaces,
+    searchLocation,
     contacts
   );
   const contactPhones = new Set(
@@ -1335,13 +1434,16 @@ export async function POST(request: Request) {
   }
 
   const fallbackCandidates = preferPlaces
-    ? [
-        ...onlineSuggestions,
-        ...fallbackPlanBase.suggestions.filter(
-          (suggestion) => suggestion.source !== "existing_contact"
-        ),
-        ...fallbackPlanBase.suggestions,
-      ]
+    ? onlineSuggestions.length > 0
+      ? [
+          ...onlineSuggestions,
+          ...fallbackPlanBase.suggestions.filter(
+            (suggestion) => suggestion.source === "existing_contact"
+          ),
+        ]
+      : fallbackPlanBase.suggestions.filter(
+          (suggestion) => suggestion.source === "existing_contact"
+        )
     : [...fallbackPlanBase.suggestions, ...onlineSuggestions];
 
   const fallbackPlan: Plan = {
