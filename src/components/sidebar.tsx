@@ -9,6 +9,8 @@ import {
   Users,
   Phone,
   Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -23,7 +25,24 @@ const NAV_ITEMS = [
   { href: "/calls", label: "Calls", icon: Phone },
 ];
 
-function NavLinks({ onClick }: { onClick?: () => void }) {
+const SIDEBAR_COLLAPSED_STORAGE_KEY = "dashboard:sidebar-collapsed";
+
+function readStoredCollapsedState(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function NavLinks({
+  onClick,
+  collapsed = false,
+}: {
+  onClick?: () => void;
+  collapsed?: boolean;
+}) {
   const pathname = usePathname();
 
   return (
@@ -38,15 +57,17 @@ function NavLinks({ onClick }: { onClick?: () => void }) {
             key={item.href}
             href={item.href}
             onClick={onClick}
+            title={collapsed ? item.label : undefined}
             className={cn(
-              "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+              "flex items-center rounded-lg text-sm font-medium transition-colors",
+              collapsed ? "justify-center px-2 py-2.5" : "gap-3 px-3 py-2.5",
               isActive
                 ? "bg-primary text-primary-foreground"
                 : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
             )}
           >
             <item.icon className="h-4 w-4" />
-            {item.label}
+            {collapsed ? <span className="sr-only">{item.label}</span> : item.label}
           </Link>
         );
       })}
@@ -55,16 +76,67 @@ function NavLinks({ onClick }: { onClick?: () => void }) {
 }
 
 export function Sidebar() {
+  const [collapsed, setCollapsed] = useState<boolean>(readStoredCollapsedState);
+
+  function toggleCollapsed() {
+    setCollapsed((current) => {
+      const next = !current;
+      try {
+        window.localStorage.setItem(
+          SIDEBAR_COLLAPSED_STORAGE_KEY,
+          next ? "true" : "false"
+        );
+      } catch {
+        // Ignore storage failures.
+      }
+      return next;
+    });
+  }
+
   return (
-    <aside className="hidden md:flex md:w-64 md:flex-col md:border-r md:bg-card">
-      <div className="flex h-16 items-center border-b px-6">
-        <Link href="/" className="flex items-center gap-2">
+    <aside
+      className={cn(
+        "hidden md:flex md:flex-col md:border-r md:bg-card md:transition-[width] md:duration-200",
+        collapsed ? "md:w-20" : "md:w-64"
+      )}
+    >
+      <div
+        className={cn(
+          "flex h-16 items-center border-b",
+          collapsed ? "px-2" : "px-4 lg:px-6"
+        )}
+      >
+        <Link
+          href="/"
+          className={cn(
+            "flex items-center gap-2 overflow-hidden",
+            collapsed ? "w-8 justify-center" : "min-w-0"
+          )}
+        >
           <Phone className="h-5 w-5 text-primary" />
-          <span className="text-lg font-semibold">Call Scheduler</span>
+          {collapsed ? (
+            <span className="sr-only">Call Scheduler</span>
+          ) : (
+            <span className="truncate text-lg font-semibold">Call Scheduler</span>
+          )}
         </Link>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="ml-auto"
+          onClick={toggleCollapsed}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {collapsed ? (
+            <PanelLeftOpen className="h-4 w-4" />
+          ) : (
+            <PanelLeftClose className="h-4 w-4" />
+          )}
+        </Button>
       </div>
-      <div className="flex-1 px-4 py-4">
-        <NavLinks />
+      <div className={cn("flex-1 py-4", collapsed ? "px-2" : "px-4")}>
+        <NavLinks collapsed={collapsed} />
       </div>
     </aside>
   );
