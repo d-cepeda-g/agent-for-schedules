@@ -395,6 +395,8 @@ export default function DashboardPage() {
   const [valentineSuccessBanner, setValentineSuccessBanner] = useState(false);
   const [valentineResultsReady, setValentineResultsReady] = useState(false);
   const [selectedLumiChoice, setSelectedLumiChoice] = useState<string>("");
+  const [lumiConfirmingCall, setLumiConfirmingCall] = useState(false);
+  const [lumiReservationConfirmed, setLumiReservationConfirmed] = useState(false);
   const valentineResultsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const valentineBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [stats, setStats] = useState({
@@ -748,6 +750,20 @@ export default function DashboardPage() {
     }
   }
 
+  function handleConfirmLumiReservation() {
+    if (!selectedLumiChoice) return;
+    setLumiConfirmingCall(true);
+
+    setTimeout(() => {
+      setLumiConfirmingCall(false);
+      setLumiReservationConfirmed(true);
+
+      setTimeout(() => {
+        setValentineResultsReady(false);
+      }, 4000);
+    }, 1500);
+  }
+
   async function handleConfirmValentineSelectionAndCall() {
     if (!selectedValentineOption) return;
     setActionCreatingId(selectedValentineOption.call_action.id);
@@ -973,19 +989,38 @@ export default function DashboardPage() {
                 );
               })}
             </div>
-            <div className="flex items-center gap-3">
-              <Button
-                disabled={!selectedLumiChoice}
-                onClick={() => {
-                  alert(`Confirming reservation at ${selectedLumiChoice}! Lumi will call back to finalize.`);
-                }}
-              >
-                Confirm Reservation at {selectedLumiChoice || "..."}
-              </Button>
-              <p className="text-xs text-muted-foreground">
-                Lumi will call back to finalize your booking.
-              </p>
-            </div>
+            {lumiReservationConfirmed ? (
+              <div className="flex items-center gap-3 rounded-lg border border-green-200 bg-green-50/60 p-4">
+                <CheckCircle className="h-5 w-5 shrink-0 text-green-600" />
+                <div>
+                  <p className="text-sm font-semibold text-green-800">
+                    Reservation confirmed at {selectedLumiChoice}
+                  </p>
+                  <p className="text-xs text-green-700">
+                    Calendar entry created for Feb 14. Lumi will call the restaurant to finalize.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <Button
+                  disabled={!selectedLumiChoice || lumiConfirmingCall}
+                  onClick={handleConfirmLumiReservation}
+                >
+                  {lumiConfirmingCall ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Lumi is confirming...
+                    </>
+                  ) : (
+                    `Confirm Reservation at ${selectedLumiChoice || "..."}`
+                  )}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Lumi will call the restaurant to finalize your booking.
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
       ) : null}

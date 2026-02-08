@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
-import { CalendarDays, ExternalLink, Phone } from "lucide-react";
+import { CalendarDays, ExternalLink, Phone, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -42,6 +43,8 @@ export default function CalendarViewPage() {
   const [loading, setLoading] = useState(true);
   const [upcomingEvents, setUpcomingEvents] = useState<ScheduledCall[]>([]);
   const [upcomingLoading, setUpcomingLoading] = useState(true);
+  const [deletingCallId, setDeletingCallId] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -81,7 +84,7 @@ export default function CalendarViewPage() {
     return () => {
       active = false;
     };
-  }, [month]);
+  }, [month, refreshKey]);
 
   useEffect(() => {
     let active = true;
@@ -128,7 +131,7 @@ export default function CalendarViewPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [refreshKey]);
 
   const callsByDay = useMemo(() => {
     const map = new Map<string, ScheduledCall[]>();
@@ -153,6 +156,19 @@ export default function CalendarViewPage() {
       (a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
     );
   }, [callsByDay, selectedDate]);
+
+  async function handleDeleteCall(callId: string, customerName: string) {
+    if (!confirm(`Delete the call for ${customerName}? This cannot be undone.`)) return;
+    setDeletingCallId(callId);
+    try {
+      const res = await fetch(`/api/calls/${callId}`, { method: "DELETE" });
+      if (res.ok) {
+        setRefreshKey((k) => k + 1);
+      }
+    } finally {
+      setDeletingCallId(null);
+    }
+  }
 
   const statusColor: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
     pending: "outline",
@@ -231,7 +247,7 @@ export default function CalendarViewPage() {
                       </div>
                     )}
 
-                    <div className="mt-3">
+                    <div className="mt-3 flex items-center gap-2">
                       <Link href={`/calls/${call.id}`} className="inline-flex items-center">
                         <Badge variant="secondary" className="gap-1">
                           <Phone className="h-3 w-3" />
@@ -239,6 +255,16 @@ export default function CalendarViewPage() {
                           <ExternalLink className="h-3 w-3" />
                         </Badge>
                       </Link>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={deletingCallId === call.id}
+                        onClick={() => void handleDeleteCall(call.id, call.customer.name)}
+                        className="h-7 px-2 text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="mr-1 h-3 w-3" />
+                        {deletingCallId === call.id ? "Deleting..." : "Delete"}
+                      </Button>
                     </div>
                   </div>
                 ))}
@@ -290,6 +316,15 @@ export default function CalendarViewPage() {
                         <ExternalLink className="h-3 w-3" />
                       </Badge>
                     </Link>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="Delete call"
+                      disabled={deletingCallId === call.id}
+                      onClick={() => void handleDeleteCall(call.id, call.customer.name)}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
                   </div>
                 </div>
               ))}

@@ -45,7 +45,7 @@ type Call = {
 
 export default function CallsPage() {
   const [calls, setCalls] = useState<Call[]>([]);
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("completed");
   const [loading, setLoading] = useState(true);
   const [dispatching, setDispatching] = useState<string | null>(null);
   const [deletingCallId, setDeletingCallId] = useState<string | null>(null);
