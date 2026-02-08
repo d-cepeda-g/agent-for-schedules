@@ -1159,7 +1159,7 @@ async function recoverPhonesForLeads(
       systemPrompt,
       userPrompt,
       temperature: 0,
-      maxTokens: 600,
+      maxTokens: 5000,
       searchContextSize: "high",
       userLocation: toWebSearchUserLocation(location),
       includeSources: false,
@@ -1169,7 +1169,7 @@ async function recoverPhonesForLeads(
       systemPrompt: "Extract the JSON from the text. Return strict JSON: { \"results\": [{ \"name\": string, \"phone\": string, \"address\": string }] }. Never invent data.",
       userPrompt: result.text,
       temperature: 0,
-      maxTokens: 600,
+      maxTokens: 5000,
     });
 
     const record = toRecord(jsonPayload);
@@ -1230,7 +1230,7 @@ async function runOnlineResearchAttempt(input: {
     systemPrompt: input.systemPrompt,
     userPrompt: input.userPrompt,
     temperature: 0.1,
-    maxTokens: 900,
+    maxTokens: 5000,
     searchContextSize: "high",
     userLocation: toWebSearchUserLocation(input.location),
     includeSources: true,
@@ -1249,7 +1249,7 @@ async function runOnlineResearchAttempt(input: {
     systemPrompt: normalizeSystemPrompt,
     userPrompt: normalizeUserPrompt,
     temperature: 0,
-    maxTokens: 900,
+    maxTokens: 5000,
   });
 
   const normalized = extractOnlineResearchCandidates(normalizedPayload);
