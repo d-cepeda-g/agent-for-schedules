@@ -141,7 +141,7 @@ type ValentineCallResult = {
   availableSlot: string;
   partySize: string;
   specialNote: string;
-  outcome: "available" | "limited" | "waitlist";
+  outcome: "available" | "conflict";
 };
 
 const MOCKED_VALENTINE_CALL_RESULTS: ValentineCallResult[] = [
@@ -150,19 +150,19 @@ const MOCKED_VALENTINE_CALL_RESULTS: ValentineCallResult[] = [
     cuisine: "French Fine Dining",
     area: "Schwabing, Munich",
     phone: "+49 89 36 19 59-0",
-    availableSlot: "20:00 – Valentine's tasting menu for two",
+    availableSlot: "20:00 only – dinner service",
     partySize: "2 guests",
-    specialNote: "Last table available. 7-course Valentine menu at €189 per person, includes champagne aperitif.",
-    outcome: "limited",
+    specialNote: "No lunch service on Valentine's Day. Only dinner at 20:00 available, but this conflicts with your Valentine's dinner plans.",
+    outcome: "conflict",
   },
   {
     restaurantName: "Matsuhisa Munich",
     cuisine: "Japanese-Peruvian",
     area: "Altstadt, Munich",
     phone: "+49 (89) 290 98 834",
-    availableSlot: "19:30 or 21:15 – choice of two seatings",
+    availableSlot: "13:30 – 15:00 lunch reservation",
     partySize: "2 guests",
-    specialNote: "Omakase Valentine experience available (€160pp). Window table confirmed for the 21:15 slot.",
+    specialNote: "Valentine's lunch available. Window table for two confirmed at 13:30. Special lunch omakase (€95pp) with champagne.",
     outcome: "available",
   },
   {
@@ -170,10 +170,10 @@ const MOCKED_VALENTINE_CALL_RESULTS: ValentineCallResult[] = [
     cuisine: "Italian / Grill",
     area: "Altstadt-Lehel, Munich",
     phone: "+49 89 45 22 880",
-    availableSlot: "20:30 – waitlisted, callback expected by Feb 12",
+    availableSlot: "16:00 – 17:30 late lunch",
     partySize: "2 guests",
-    specialNote: "Fully booked but added to priority waitlist. They suggest calling back Wednesday morning for cancellations.",
-    outcome: "waitlist",
+    specialNote: "Only late lunch slot at 16:00 available, but this conflicts with your 15:30–17:00 calendar block.",
+    outcome: "conflict",
   },
 ];
 
@@ -571,10 +571,10 @@ export default function DashboardPage() {
 
   const aiOpsSummary = useMemo(() => {
     if (valentineResultsReady) {
-      return "Lumi completed 3 Valentine reservation calls. Tantris has 1 table left (tasting menu, €189pp). Matsuhisa has two seatings available — 19:30 and 21:15 with a window table for the late slot. Brenner is fully booked but you're on the priority waitlist. Check the collected data below to pick your restaurant.";
+      return "Lumi completed 3 Valentine lunch reservation calls. Tantris only has dinner at 20:00 which conflicts with your evening plans. Matsuhisa has a lunch window table at 13:30–15:00 that fits your schedule perfectly. Brenner's only slot (16:00) conflicts with your 15:30 calendar block. Check the collected data below to pick your restaurant.";
     }
     if (valentineCallsScheduled) {
-      return "3 Valentine reservation calls are in progress. Lumi is currently speaking with Tantris, Matsuhisa, and Brenner. Results will appear automatically once all calls complete.";
+      return "3 Valentine lunch reservation calls are in progress. Lumi is currently speaking with Tantris, Matsuhisa, and Brenner. Results will appear automatically once all calls complete.";
     }
     if (!insights) return "";
     if (hasPriorCalls) return insights.summary;
@@ -944,13 +944,11 @@ export default function DashboardPage() {
                 const isSelected = selectedLumiChoice === result.restaurantName;
                 const outcomeColors: Record<string, string> = {
                   available: "bg-green-100 text-green-800 border-green-200",
-                  limited: "bg-amber-100 text-amber-800 border-amber-200",
-                  waitlist: "bg-red-100 text-red-800 border-red-200",
+                  conflict: "bg-red-100 text-red-800 border-red-200",
                 };
                 const outcomeLabels: Record<string, string> = {
-                  available: "Available",
-                  limited: "Limited availability",
-                  waitlist: "Waitlist only",
+                  available: "Fits your schedule",
+                  conflict: "Schedule conflict",
                 };
                 return (
                   <button
@@ -1007,11 +1005,11 @@ export default function DashboardPage() {
                   const selectedResult = MOCKED_VALENTINE_CALL_RESULTS.find(
                     (r) => r.restaurantName === selectedLumiChoice
                   );
-                  const isWaitlist = selectedResult?.outcome === "waitlist";
+                  const isUnavailable = selectedResult?.outcome === "conflict";
                   return (
                     <>
                       <Button
-                        disabled={!selectedLumiChoice || lumiConfirmingCall || isWaitlist}
+                        disabled={!selectedLumiChoice || lumiConfirmingCall || isUnavailable}
                         onClick={handleConfirmLumiReservation}
                       >
                         {lumiConfirmingCall ? (
@@ -1024,8 +1022,8 @@ export default function DashboardPage() {
                         )}
                       </Button>
                       <p className="text-xs text-muted-foreground">
-                        {isWaitlist
-                          ? "This restaurant is fully booked. Pick another option."
+                        {isUnavailable
+                          ? "This slot conflicts with your schedule. Pick another option."
                           : "Lumi will call the restaurant to finalize your booking."}
                       </p>
                     </>
@@ -1150,7 +1148,7 @@ export default function DashboardPage() {
                         <div className="min-w-0">
                           <p className="truncate text-xs font-medium">{result.restaurantName}</p>
                           <p className="text-[10px] text-muted-foreground">
-                            {valentineResultsReady ? `${result.outcome === "available" ? "Available" : result.outcome === "limited" ? "Limited" : "Waitlist"}` : "Calling..."}
+                            {valentineResultsReady ? `${result.outcome === "available" ? "Fits schedule" : "Conflict"}` : "Calling..."}
                           </p>
                         </div>
                       </div>
