@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { DispatchHeartbeat } from "@/components/dispatch-heartbeat";
 
 export const metadata: Metadata = {
-  title: "Call Scheduler",
+  title: "Lumi",
   description: "Schedule and manage outbound AI calls with ElevenLabs",
 };
 

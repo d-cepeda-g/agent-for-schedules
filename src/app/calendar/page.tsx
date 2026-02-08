@@ -40,6 +40,8 @@ export default function CalendarViewPage() {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
   const [calls, setCalls] = useState<ScheduledCall[]>([]);
   const [loading, setLoading] = useState(true);
+  const [upcomingEvents, setUpcomingEvents] = useState<ScheduledCall[]>([]);
+  const [upcomingLoading, setUpcomingLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
@@ -80,6 +82,53 @@ export default function CalendarViewPage() {
       active = false;
     };
   }, [month]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadUpcomingEvents() {
+      setUpcomingLoading(true);
+      try {
+        const res = await fetch("/api/calls");
+        if (!res.ok) {
+          if (active) {
+            setUpcomingEvents([]);
+            setUpcomingLoading(false);
+          }
+          return;
+        }
+
+        const payload = (await res.json()) as ScheduledCall[];
+        if (!active) return;
+
+        const now = Date.now();
+        const upcoming = payload
+          .filter((call) => {
+            const timestamp = new Date(call.scheduledAt).getTime();
+            if (!Number.isFinite(timestamp)) return false;
+            if (timestamp < now) return false;
+            return ["pending", "dispatching", "dispatched"].includes(call.status);
+          })
+          .sort(
+            (a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
+          )
+          .slice(0, 8);
+
+        setUpcomingEvents(upcoming);
+        setUpcomingLoading(false);
+      } catch {
+        if (active) {
+          setUpcomingEvents([]);
+          setUpcomingLoading(false);
+        }
+      }
+    }
+
+    void loadUpcomingEvents();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const callsByDay = useMemo(() => {
     const map = new Map<string, ScheduledCall[]>();
@@ -198,6 +247,56 @@ export default function CalendarViewPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <CalendarDays className="h-5 w-5" />
+            Upcoming Events
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {upcomingLoading ? (
+            <p className="py-2 text-sm text-muted-foreground">Loading upcoming events...</p>
+          ) : upcomingEvents.length === 0 ? (
+            <p className="py-2 text-sm text-muted-foreground">
+              No upcoming events yet.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {upcomingEvents.map((call) => (
+                <div
+                  key={call.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"
+                >
+                  <div>
+                    <p className="text-sm font-medium">{call.customer.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {format(new Date(call.scheduledAt), "EEE, MMM d 'at' h:mm a")} ·{" "}
+                      {call.customer.phone}
+                    </p>
+                    {call.callReason ? (
+                      <p className="text-xs text-muted-foreground">{call.callReason}</p>
+                    ) : null}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Badge variant={statusColor[call.status] || "outline"}>
+                      {call.status}
+                    </Badge>
+                    <Link href={`/calls/${call.id}`} className="inline-flex items-center">
+                      <Badge variant="secondary" className="gap-1">
+                        Open
+                        <ExternalLink className="h-3 w-3" />
+                      </Badge>
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

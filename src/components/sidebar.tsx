@@ -115,9 +115,9 @@ export function Sidebar() {
         >
           <Phone className="h-5 w-5 text-primary" />
           {collapsed ? (
-            <span className="sr-only">Call Scheduler</span>
+            <span className="sr-only">Lumi</span>
           ) : (
-            <span className="truncate text-lg font-semibold">Call Scheduler</span>
+            <span className="truncate text-lg font-semibold">Lumi</span>
           )}
         </Link>
         <Button
@@ -156,12 +156,12 @@ export function MobileNav() {
         <SheetContent side="left" className="w-64 p-4">
           <div className="mb-6 flex items-center gap-2 px-3">
             <Phone className="h-5 w-5 text-primary" />
-            <span className="text-lg font-semibold">Call Scheduler</span>
+            <span className="text-lg font-semibold">Lumi</span>
           </div>
           <NavLinks onClick={() => setOpen(false)} />
         </SheetContent>
       </Sheet>
-      <span className="ml-3 text-lg font-semibold">Call Scheduler</span>
+      <span className="ml-3 text-lg font-semibold">Lumi</span>
       <Link href="/schedule" className="ml-auto">
         <Button size="sm">
           <CalendarPlus className="h-4 w-4" />

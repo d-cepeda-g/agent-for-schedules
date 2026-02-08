@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
@@ -128,6 +128,7 @@ type CustomerLookup = {
 
 const COMPANY_ONSITE_DATE_LABEL = "06.03.2026";
 const ONSITE_BLOCKER_ACTION_ID = "company-onsite-blocker-2026-03-06";
+const ONSITE_SEARCH_DELAY_MS = 1600;
 
 const ONSITE_VENUES = [
   {
@@ -323,6 +324,7 @@ function toPrefillUrl(action: ProactiveAction): string {
 
 export default function DashboardPage() {
   const router = useRouter();
+  const onsiteSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [upcomingCalls, setUpcomingCalls] = useState<Call[]>([]);
   const [recentEvals, setRecentEvals] = useState<Evaluation[]>([]);
   const [insights, setInsights] = useState<DashboardInsights | null>(null);
@@ -332,6 +334,7 @@ export default function DashboardPage() {
   const [dismissedActionIds, setDismissedActionIds] = useState<string[]>([]);
   const [valentinePanelDismissed, setValentinePanelDismissed] = useState(false);
   const [showOnsiteLocations, setShowOnsiteLocations] = useState(false);
+  const [findingOnsiteLocations, setFindingOnsiteLocations] = useState(false);
   const [selectedValentineOptionId, setSelectedValentineOptionId] = useState<string>("");
   const [stats, setStats] = useState({
     totalCalls: 0,
@@ -389,6 +392,19 @@ export default function DashboardPage() {
   useEffect(() => {
     setDismissedActionIds(readDismissedActionIds());
     setValentinePanelDismissed(readValentinePanelDismissed());
+  }, []);
+
+  function clearOnsiteSearchTimer() {
+    if (onsiteSearchTimerRef.current) {
+      clearTimeout(onsiteSearchTimerRef.current);
+      onsiteSearchTimerRef.current = null;
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      clearOnsiteSearchTimer();
+    };
   }, []);
 
   const statusColor: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -656,6 +672,8 @@ export default function DashboardPage() {
 
   function handleDismissProactiveAction(actionId: string) {
     if (actionId === ONSITE_BLOCKER_ACTION_ID) {
+      clearOnsiteSearchTimer();
+      setFindingOnsiteLocations(false);
       setShowOnsiteLocations(false);
     }
     setDismissedActionIds((current) => {
@@ -667,6 +685,8 @@ export default function DashboardPage() {
   }
 
   function handleResetDismissedSuggestions() {
+    clearOnsiteSearchTimer();
+    setFindingOnsiteLocations(false);
     setDismissedActionIds([]);
     writeDismissedActionIds([]);
     setValentinePanelDismissed(false);
@@ -678,6 +698,25 @@ export default function DashboardPage() {
   function handleDismissValentinePanel() {
     setValentinePanelDismissed(true);
     writeValentinePanelDismissed(true);
+  }
+
+  function handleToggleOnsiteLocations() {
+    if (showOnsiteLocations) {
+      clearOnsiteSearchTimer();
+      setFindingOnsiteLocations(false);
+      setShowOnsiteLocations(false);
+      return;
+    }
+
+    if (findingOnsiteLocations) return;
+
+    clearOnsiteSearchTimer();
+    setFindingOnsiteLocations(true);
+    onsiteSearchTimerRef.current = setTimeout(() => {
+      setShowOnsiteLocations(true);
+      setFindingOnsiteLocations(false);
+      onsiteSearchTimerRef.current = null;
+    }, ONSITE_SEARCH_DELAY_MS);
   }
 
   return (
@@ -785,17 +824,19 @@ export default function DashboardPage() {
                         <div className="mt-3 flex items-center gap-2">
                           <Button
                             size="sm"
-                            disabled={!isOnsiteBlocker && isCreating}
+                            disabled={isOnsiteBlocker ? findingOnsiteLocations : isCreating}
                             onClick={() => {
                               if (isOnsiteBlocker) {
-                                setShowOnsiteLocations((current) => !current);
+                                handleToggleOnsiteLocations();
                                 return;
                               }
                               void handleRunProactiveAction(action);
                             }}
                           >
                             {isOnsiteBlocker
-                              ? showOnsiteLocations
+                              ? findingOnsiteLocations
+                                ? "Finding locations..."
+                                : showOnsiteLocations
                                 ? "Hide Event Locations"
                                 : "Find Event Locations"
                               : isCreating
@@ -814,6 +855,15 @@ export default function DashboardPage() {
                     );
                     })}
                     </div>
+
+                    {findingOnsiteLocations &&
+                    !showOnsiteLocations &&
+                    !dismissedActionIdSet.has(ONSITE_BLOCKER_ACTION_ID) ? (
+                      <div className="flex items-center gap-2 rounded-lg border p-3 text-sm text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        AI is looking for event locations close to Munich...
+                      </div>
+                    ) : null}
 
                     {showOnsiteLocations &&
                     !dismissedActionIdSet.has(ONSITE_BLOCKER_ACTION_ID) ? (
