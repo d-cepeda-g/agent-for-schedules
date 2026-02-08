@@ -93,7 +93,6 @@ type DashboardInsights = {
     prompt: string;
     restaurants: RestaurantSuggestion[];
   };
-  valentine_availability_summary: unknown;
   source: "openai" | "fallback";
   source_reason: string | null;
 };

@@ -10,7 +10,7 @@ datasource db {
 model Customer {
   id        String   @id @default(cuid())
   name      String
-  phone     String
+  phone     String   @unique
   email     String   @default("")
   notes     String   @default("")
   preferredLanguage String @default("English")

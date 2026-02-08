@@ -29,23 +29,6 @@ type RestaurantSuggestion = {
   call_action: ProactiveAction;
 };
 
-type ValentineAvailabilityOption = {
-  id: string;
-  restaurant_name: string;
-  available_time: string;
-  cuisine: string;
-  area: string;
-  call_action: ProactiveAction;
-};
-
-type ValentineAvailabilitySummary = {
-  title: string;
-  status: "pending";
-  summary: string;
-  confirm_button_label: string;
-  options: ValentineAvailabilityOption[];
-};
-
 type DashboardInsights = {
   summary: string;
   important_things: string[];
@@ -54,7 +37,6 @@ type DashboardInsights = {
     prompt: string;
     restaurants: RestaurantSuggestion[];
   };
-  valentine_availability_summary: ValentineAvailabilitySummary | null;
   source: "openai" | "fallback";
   source_reason: string | null;
 };
@@ -63,22 +45,6 @@ type CustomerLite = {
   id: string;
   name: string;
   phone: string;
-};
-
-type ValentineCallForSummary = {
-  id: string;
-  status: string;
-  scheduledAt: Date;
-  customer: CustomerLite;
-  callReason: string;
-  callPurpose: string;
-  notes: string;
-  logs: Array<{
-    id: string;
-    event: string;
-    message: string;
-    createdAt: Date;
-  }>;
 };
 
 const MONTH_INDEX_BY_NAME: Record<string, number> = {
@@ -453,113 +419,6 @@ function isValentineAction(action: ProactiveAction): boolean {
   return combined.includes("valentine");
 }
 
-function isValentineLikeText(value: string): boolean {
-  const normalized = value.toLowerCase();
-  return (
-    normalized.includes("valentine") ||
-    normalized.includes("reservation") ||
-    normalized.includes("restaurant")
-  );
-}
-
-function getRestaurantProfile(name: string): { cuisine: string; area: string } {
-  const normalized = name.toLowerCase();
-  if (normalized.includes("tantris")) {
-    return { cuisine: "French Fine Dining", area: "Schwabing, Munich" };
-  }
-  if (normalized.includes("matsuhisa")) {
-    return { cuisine: "Japanese-Peruvian", area: "Altstadt, Munich" };
-  }
-  if (normalized.includes("brenner")) {
-    return { cuisine: "Italian / Grill", area: "Altstadt-Lehel, Munich" };
-  }
-  return { cuisine: "Restaurant", area: "Munich" };
-}
-
-function buildValentineAvailabilitySummary(
-  calls: ValentineCallForSummary[]
-): ValentineAvailabilitySummary | null {
-  const valentineCalls = calls.filter((call) => {
-    const searchable = [
-      call.callReason,
-      call.callPurpose,
-      call.notes,
-      call.customer.name,
-    ]
-      .join(" ")
-      .trim();
-    return isValentineLikeText(searchable);
-  });
-
-  const valentineCallsWithLogs = valentineCalls.filter(
-    (call) => Array.isArray(call.logs) && call.logs.length > 0
-  );
-
-  // Show the shortlist interaction only once we have enough call logs for the 3-call scenario.
-  if (valentineCallsWithLogs.length < 3) {
-    return null;
-  }
-
-  const rankedByStatus = [...valentineCallsWithLogs].sort((left, right) => {
-    const score = (status: string): number => {
-      if (status === "completed") return 0;
-      if (status === "dispatched") return 1;
-      if (status === "dispatching") return 2;
-      if (status === "pending") return 3;
-      return 4;
-    };
-    const delta = score(left.status) - score(right.status);
-    if (delta !== 0) return delta;
-    return left.scheduledAt.getTime() - right.scheduledAt.getTime();
-  });
-
-  const selected = rankedByStatus.slice(0, 2);
-  if (selected.length < 2) return null;
-
-  const optionTimes = ["20:00", "19:30"];
-  const valentineEventDate = parseDateOnly(getUpcomingValentineDate());
-  const followUpSlot = deriveSoonOutreachSlot(valentineEventDate);
-  const options: ValentineAvailabilityOption[] = selected.map((call, index) => {
-    const profile = getRestaurantProfile(call.customer.name);
-    const availableTime = optionTimes[index] || "20:00";
-
-    return {
-      id: `valentine-available-${call.id}`,
-      restaurant_name: call.customer.name,
-      available_time: availableTime,
-      cuisine: profile.cuisine,
-      area: profile.area,
-      call_action: {
-        id: `valentine-confirm-${call.id}`,
-        title: `Confirm selection with ${call.customer.name}`,
-        description: `Call ${call.customer.name} to confirm the final selected Valentine reservation.`,
-        customer_id: call.customer.id,
-        call_reason: `Confirm final Valentine reservation with ${call.customer.name}`,
-        call_purpose: `Confirm selected dinner slot (${availableTime}) and finalize booking details.`,
-        notes: [
-          `Selected restaurant: ${call.customer.name}`,
-          `Confirmed available time: ${availableTime}`,
-          "Ask to finalize booking under the selected option.",
-        ].join("\n"),
-        preferred_language: "English",
-        scheduled_date: followUpSlot.scheduledDate,
-        scheduled_time: followUpSlot.scheduledTime,
-        target_name: call.customer.name,
-        target_phone: call.customer.phone,
-      },
-    };
-  });
-
-  return {
-    title: "Valentine's Dinner Reservation",
-    status: "pending",
-    summary:
-      "I found 2 restaurants that are available. Which one would you like me to book?",
-    confirm_button_label: "Confirm Selection and Call",
-    options,
-  };
-}
-
 function buildFallbackValentineRestaurants(
   customers: CustomerLite[],
   targetCustomer: CustomerLite | null,
@@ -712,7 +571,6 @@ function buildFallbackInsights(calls: Array<{
         "Valentine's Day is coming. Want me to look for a restaurant reservation?",
       restaurants,
     },
-    valentine_availability_summary: null,
     source: "fallback",
     source_reason: reason,
   };
@@ -834,14 +692,13 @@ function sanitizeInsightsResponse(
       prompt,
       restaurants: restaurants.length > 0 ? restaurants : fallback.valentines.restaurants,
     },
-    valentine_availability_summary: fallback.valentine_availability_summary,
     source: "openai",
     source_reason: null,
   };
 }
 
 export async function GET() {
-  const [customers, calls, valentineCallsWithLogs] = await Promise.all([
+  const [customers, calls] = await Promise.all([
     db.customer.findMany({
       select: { id: true, name: true, phone: true },
       orderBy: { createdAt: "desc" },
@@ -879,54 +736,14 @@ export async function GET() {
         },
       },
     }),
-    db.scheduledCall.findMany({
-      where: {
-        OR: [
-          { callReason: { contains: "Valentine" } },
-          { callReason: { contains: "valentine" } },
-          { callPurpose: { contains: "Valentine" } },
-          { callPurpose: { contains: "valentine" } },
-          { notes: { contains: "Valentine" } },
-          { notes: { contains: "valentine" } },
-        ],
-      },
-      orderBy: { scheduledAt: "desc" },
-      take: 20,
-      select: {
-        id: true,
-        status: true,
-        scheduledAt: true,
-        callReason: true,
-        callPurpose: true,
-        notes: true,
-        customer: { select: { id: true, name: true, phone: true } },
-        logs: {
-          select: {
-            id: true,
-            event: true,
-            message: true,
-            createdAt: true,
-          },
-          orderBy: { createdAt: "desc" },
-          take: 10,
-        },
-      },
-    }),
   ]);
-
-  const valentineAvailabilitySummary = buildValentineAvailabilitySummary(
-    valentineCallsWithLogs
-  );
 
   const fallbackBase = buildFallbackInsights(
     calls,
     customers,
     "OPENAI_API_KEY is not configured in this environment."
   );
-  const fallback: DashboardInsights = {
-    ...fallbackBase,
-    valentine_availability_summary: valentineAvailabilitySummary,
-  };
+  const fallback: DashboardInsights = fallbackBase;
 
   if (!hasOpenAiApiKey()) {
     return NextResponse.json(fallback);
@@ -973,10 +790,7 @@ export async function GET() {
     });
 
     const insights = sanitizeInsightsResponse(raw, customers, fallback);
-    return NextResponse.json({
-      ...insights,
-      valentine_availability_summary: valentineAvailabilitySummary,
-    });
+    return NextResponse.json(insights);
   } catch (error) {
     const reason =
       error instanceof Error && error.message
