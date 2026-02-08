@@ -761,7 +761,7 @@ export default function DashboardPage() {
       setTimeout(() => {
         setValentineResultsReady(false);
       }, 4000);
-    }, 1500);
+    }, 15000);
   }
 
   async function handleConfirmValentineSelectionAndCall() {
