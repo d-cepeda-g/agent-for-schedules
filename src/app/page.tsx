@@ -1035,57 +1035,6 @@ export default function DashboardPage() {
         </Card>
       ) : null}
 
-      {!valentineCallsScheduled && valentineAvailabilitySummary ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between gap-2">
-              <span>{valentineAvailabilitySummary.title}</span>
-              <Badge variant="outline" className="capitalize">
-                {valentineAvailabilitySummary.status}
-              </Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm">{valentineAvailabilitySummary.summary}</p>
-            <div className="grid gap-3 md:grid-cols-2">
-              {valentineAvailabilitySummary.options.map((option) => {
-                const selected = selectedValentineOption?.id === option.id;
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => setSelectedValentineOptionId(option.id)}
-                    className={`rounded-lg border p-3 text-left transition ${
-                      selected
-                        ? "border-primary bg-primary/5"
-                        : "border-border hover:bg-accent/40"
-                    }`}
-                  >
-                    <p className="text-sm font-medium">{option.restaurant_name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {option.available_time} - Available
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {option.cuisine} - {option.area}
-                    </p>
-                  </button>
-                );
-              })}
-            </div>
-            <div>
-              <Button
-                disabled={!selectedValentineOption}
-                onClick={() => void handleConfirmValentineSelectionAndCall()}
-              >
-                {selectedValentineOption &&
-                actionCreatingId === selectedValentineOption.call_action.id
-                  ? "Creating..."
-                  : valentineAvailabilitySummary.confirm_button_label}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-2">
@@ -1406,6 +1355,31 @@ export default function DashboardPage() {
             </div>
           </CardContent>
         </Card>
+      </div>
+
+      <div className="flex justify-center">
+        <Button
+          variant="outline"
+          onClick={async () => {
+            try {
+              const res = await fetch("/api/calls/quick-david", { method: "POST" });
+              if (!res.ok) {
+                const data = (await res.json().catch(() => null)) as { error?: string } | null;
+                alert(data?.error || "Failed to schedule call");
+                return;
+              }
+              const data = (await res.json()) as { id?: string };
+              if (data?.id) {
+                router.push(`/calls/${data.id}`);
+              }
+            } catch {
+              alert("Failed to schedule call");
+            }
+          }}
+        >
+          <Phone className="mr-2 h-4 w-4" />
+          Call David Cepeda
+        </Button>
       </div>
 
       {dismissedActionIds.length > 0 || valentinePanelDismissed ? (
