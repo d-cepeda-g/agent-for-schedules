@@ -4,7 +4,13 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { format } from "date-fns";
-import { ArrowLeft, ExternalLink, History, MessageSquare } from "lucide-react";
+import {
+  ArrowLeft,
+  ExternalLink,
+  History,
+  MessageSquare,
+  Trash2,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -76,6 +82,7 @@ export default function CustomerHistoryPage() {
   const [customer, setCustomer] = useState<CustomerHistory | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deletingCustomer, setDeletingCustomer] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -113,6 +120,36 @@ export default function CustomerHistoryPage() {
     };
   }, [customerId]);
 
+  async function handleDeleteCustomer() {
+    if (!customer) return;
+    if (
+      !confirm(
+        `Delete ${customer.name}? This will also delete all related calls and logs.`
+      )
+    ) {
+      return;
+    }
+
+    setDeletingCustomer(true);
+    try {
+      const response = await fetch(`/api/customers/${customer.id}`, {
+        method: "DELETE",
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: string }
+        | null;
+
+      if (!response.ok) {
+        alert(payload?.error || "Failed to delete contact");
+        return;
+      }
+
+      router.push("/customers");
+    } finally {
+      setDeletingCustomer(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="py-12 text-center text-muted-foreground">
@@ -144,10 +181,21 @@ export default function CustomerHistoryPage() {
 
   return (
     <div className="space-y-6">
-      <Button variant="ghost" onClick={() => router.push("/customers")}>
-        <ArrowLeft className="mr-2 h-4 w-4" />
-        Back to Customers
-      </Button>
+      <div className="flex items-center justify-between gap-3">
+        <Button variant="ghost" onClick={() => router.push("/customers")}>
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Back to Customers
+        </Button>
+        <Button
+          variant="destructive"
+          size="sm"
+          disabled={deletingCustomer}
+          onClick={() => void handleDeleteCustomer()}
+        >
+          <Trash2 className="mr-2 h-4 w-4" />
+          {deletingCustomer ? "Deleting..." : "Delete Contact"}
+        </Button>
+      </div>
 
       <Card>
         <CardHeader>

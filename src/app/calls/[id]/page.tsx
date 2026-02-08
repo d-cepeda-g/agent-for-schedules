@@ -359,7 +359,7 @@ export default function CallDetailPage() {
     if (!call) return;
 
     const confirmed = window.confirm(
-      "Delete this scheduled call? This action marks it as cancelled."
+      "Delete this scheduled call permanently? This cannot be undone."
     );
     if (!confirmed) return;
 

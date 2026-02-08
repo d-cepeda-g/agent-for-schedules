@@ -174,16 +174,7 @@ export async function PATCH(_request: NextRequest, { params }: Params) {
 export async function DELETE(_request: NextRequest, { params }: Params) {
   const { id } = await params;
   try {
-    await db.scheduledCall.update({
-      where: { id },
-      data: { status: "cancelled" },
-    });
-    await createCallLogSafe({
-      scheduledCallId: id,
-      event: "status_updated",
-      message: "Call cancelled",
-      level: "warn",
-    });
+    await db.scheduledCall.delete({ where: { id } });
     return NextResponse.json({ success: true });
   } catch (error) {
     if (isPrismaNotFoundError(error)) {

@@ -68,6 +68,7 @@ export default function CustomersPage() {
   const [search, setSearch] = useState("");
   const [formData, setFormData] = useState<FormData>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -157,15 +158,20 @@ export default function CustomersPage() {
   async function handleDelete(id: string) {
     if (!confirm("Delete this customer? This will also remove their calls."))
       return;
-    const response = await fetch(`/api/customers/${id}`, { method: "DELETE" });
-    if (!response.ok) {
-      const data = (await response.json().catch(() => null)) as
-        | { error?: string }
-        | null;
-      alert(data?.error || "Failed to delete customer");
-      return;
+    setDeletingId(id);
+    try {
+      const response = await fetch(`/api/customers/${id}`, { method: "DELETE" });
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        alert(data?.error || "Failed to delete customer");
+        return;
+      }
+      refreshCustomers();
+    } finally {
+      setDeletingId(null);
     }
-    refreshCustomers();
   }
 
   return (
@@ -344,6 +350,9 @@ export default function CustomersPage() {
                         <Button
                           variant="ghost"
                           size="icon"
+                          title="Delete contact"
+                          aria-label="Delete contact"
+                          disabled={deletingId === customer.id}
                           onClick={() => handleDelete(customer.id)}
                         >
                           <Trash2 className="h-4 w-4 text-destructive" />

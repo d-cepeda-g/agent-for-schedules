@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ import {
   CheckCircle,
   XCircle,
   Clock,
+  Trash2,
 } from "lucide-react";
 
 type Call = {
@@ -47,21 +48,29 @@ export default function CallsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [dispatching, setDispatching] = useState<string | null>(null);
+  const [deletingCallId, setDeletingCallId] = useState<string | null>(null);
+
+  const refreshCalls = useCallback(async (filter: string) => {
+    const params = filter !== "all" ? `?status=${filter}` : "";
+    const response = await fetch(`/api/calls${params}`);
+    if (!response.ok) {
+      setCalls([]);
+      return;
+    }
+    const data = (await response.json()) as Call[];
+    setCalls(data);
+  }, []);
 
   useEffect(() => {
-    const params =
-      statusFilter !== "all" ? `?status=${statusFilter}` : "";
-    fetch(`/api/calls${params}`)
-      .then((r) => r.json())
-      .then((data) => {
-        setCalls(data);
-        setLoading(false);
-      })
+    setLoading(true);
+    void refreshCalls(statusFilter)
       .catch(() => {
         setCalls([]);
+      })
+      .finally(() => {
         setLoading(false);
       });
-  }, [statusFilter]);
+  }, [statusFilter, refreshCalls]);
 
   async function handleDispatch(callId: string) {
     setDispatching(callId);
@@ -73,10 +82,7 @@ export default function CallsPage() {
         const data = await res.json();
         alert(data.error || "Failed to dispatch call");
       } else {
-        const params =
-          statusFilter !== "all" ? `?status=${statusFilter}` : "";
-        const refreshed = await fetch(`/api/calls${params}`);
-        setCalls(await refreshed.json());
+        await refreshCalls(statusFilter);
       }
     } finally {
       setDispatching(null);
@@ -90,10 +96,36 @@ export default function CallsPage() {
       alert(data.error || "Failed to fetch evaluation");
       return;
     }
-    const params =
-      statusFilter !== "all" ? `?status=${statusFilter}` : "";
-    const refreshed = await fetch(`/api/calls${params}`);
-    setCalls(await refreshed.json());
+    await refreshCalls(statusFilter);
+  }
+
+  async function handleDeleteCall(call: Call) {
+    if (
+      !confirm(
+        `Delete this call for ${call.customer.name} permanently? This cannot be undone.`
+      )
+    ) {
+      return;
+    }
+
+    setDeletingCallId(call.id);
+    try {
+      const response = await fetch(`/api/calls/${call.id}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        alert(payload?.error || "Failed to delete call");
+        return;
+      }
+
+      await refreshCalls(statusFilter);
+    } finally {
+      setDeletingCallId(null);
+    }
   }
 
   const statusColor: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -166,7 +198,7 @@ export default function CallsPage() {
                   <TableHead>Scheduled</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Evaluation</TableHead>
-                  <TableHead className="w-32">Actions</TableHead>
+                  <TableHead className="w-40">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -229,6 +261,16 @@ export default function CallsPage() {
                             <ExternalLink className="h-4 w-4" />
                           </Button>
                         </Link>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Delete call"
+                          aria-label="Delete call"
+                          disabled={deletingCallId === call.id}
+                          onClick={() => void handleDeleteCall(call)}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>

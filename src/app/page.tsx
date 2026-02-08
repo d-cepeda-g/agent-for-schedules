@@ -21,7 +21,6 @@ import {
   Loader2,
   Phone,
   Sparkles,
-  Users,
   X,
   XCircle,
 } from "lucide-react";
@@ -340,7 +339,6 @@ export default function DashboardPage() {
     totalCalls: 0,
     pending: 0,
     completed: 0,
-    successRate: 0,
   });
 
   useEffect(() => {
@@ -349,8 +347,6 @@ export default function DashboardPage() {
       .then((calls: Call[]) => {
         const pending = calls.filter((c) => c.status === "pending");
         const completed = calls.filter((c) => c.status === "completed");
-        const evaluations = calls.filter((c) => c.evaluation).map((c) => c.evaluation!);
-        const successes = evaluations.filter((e) => e.result === "success").length;
 
         setUpcomingCalls(
           pending
@@ -366,15 +362,11 @@ export default function DashboardPage() {
           totalCalls: calls.length,
           pending: pending.length,
           completed: completed.length,
-          successRate:
-            evaluations.length > 0
-              ? Math.round((successes / evaluations.length) * 100)
-              : 0,
         });
       })
       .catch(() => {
         setUpcomingCalls([]);
-        setStats({ totalCalls: 0, pending: 0, completed: 0, successRate: 0 });
+        setStats({ totalCalls: 0, pending: 0, completed: 0 });
       });
 
     fetch("/api/evaluations")
@@ -786,23 +778,6 @@ export default function DashboardPage() {
 
               <div className="space-y-2">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Important Things
-                </p>
-                {insights.important_things.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No key items detected.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {insights.important_things.map((item, idx) => (
-                      <p key={`${item}-${idx}`} className="text-sm text-muted-foreground">
-                        {item}
-                      </p>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Proactive Actions (Auto-filled at 8:00 PM)
                 </p>
                 {proactiveActionsWithOnsite.length === 0 ? (
@@ -1126,7 +1101,7 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Card>
           <CardContent className="flex items-center gap-4 p-6">
             <div className="rounded-lg bg-primary/10 p-3">
@@ -1157,17 +1132,6 @@ export default function DashboardPage() {
             <div>
               <p className="text-sm text-muted-foreground">Completed</p>
               <p className="text-2xl font-bold">{stats.completed}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center gap-4 p-6">
-            <div className="rounded-lg bg-blue-500/10 p-3">
-              <Users className="h-5 w-5 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Success Rate</p>
-              <p className="text-2xl font-bold">{stats.successRate}%</p>
             </div>
           </CardContent>
         </Card>
