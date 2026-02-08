@@ -460,6 +460,9 @@ function sanitizeInsightsResponse(
   if (!record) return fallback;
 
   const customerIds = new Set(customers.map((customer) => customer.id));
+  const customerIdByPhone = new Map(
+    customers.map((customer) => [customer.phone.replace(/\D+/g, ""), customer.id])
+  );
   const fallbackDate = getDefaultScheduledDate();
 
   const summary = normalizeText(record.summary, fallback.summary);
@@ -506,18 +509,36 @@ function sanitizeInsightsResponse(
       );
       if (!action) return null;
 
+      const restaurantName = normalizeText(itemRecord.name, `Restaurant ${index + 1}`);
+      const restaurantPhone = normalizeText(itemRecord.phone, "");
+      const normalizedRestaurantPhone = restaurantPhone.replace(/\D+/g, "");
+      const phoneBackedCustomerId =
+        normalizedRestaurantPhone.length > 0
+          ? customerIdByPhone.get(normalizedRestaurantPhone) || null
+          : null;
+
+      const hydratedAction: ProactiveAction = {
+        ...action,
+        customer_id: action.customer_id || phoneBackedCustomerId,
+        target_name: action.target_name || restaurantName,
+        target_phone:
+          action.target_phone ||
+          (isLikelyPhoneNumber(restaurantPhone) ? restaurantPhone : null),
+        scheduled_time: "20:00",
+      };
+
       return {
         id: normalizeText(itemRecord.id, `valentine-${index + 1}`),
-        name: normalizeText(itemRecord.name, `Restaurant ${index + 1}`),
+        name: restaurantName,
         cuisine: normalizeText(itemRecord.cuisine, "Cuisine not specified"),
         area: normalizeText(itemRecord.area, "Area not specified"),
         address: normalizeText(itemRecord.address, "Address not provided"),
-        phone: normalizeText(itemRecord.phone, ""),
+        phone: restaurantPhone,
         reservation_hint: normalizeText(
           itemRecord.reservation_hint,
           "Ask for available reservation slots around 20:00."
         ),
-        call_action: { ...action, scheduled_time: "20:00" },
+        call_action: hydratedAction,
       } satisfies RestaurantSuggestion;
     })
     .filter((item): item is RestaurantSuggestion => Boolean(item))
