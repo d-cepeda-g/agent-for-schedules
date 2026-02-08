@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { format } from "date-fns";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,7 +43,17 @@ type ScheduledCall = {
   customer: { id: string; name: string; phone: string };
 };
 
+function isDateOnly(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function isTimeOnly(value: string): boolean {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
+
 export default function SchedulePage() {
+  const searchParams = useSearchParams();
+  const hasAppliedPrefill = useRef(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(
     new Date()
@@ -76,6 +87,40 @@ export default function SchedulePage() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (hasAppliedPrefill.current) return;
+
+    const prefillReason = searchParams.get("callReason");
+    const prefillPurpose = searchParams.get("callPurpose");
+    const prefillNotes = searchParams.get("notes");
+    const prefillLanguage = searchParams.get("preferredLanguage");
+    const prefillDate = searchParams.get("date");
+    const prefillTime = searchParams.get("time");
+    const prefillCustomerId = searchParams.get("customerId");
+
+    if (prefillCustomerId && customers.length === 0) return;
+
+    if (prefillReason) setCallReason(prefillReason);
+    if (prefillPurpose) setCallPurpose(prefillPurpose);
+    if (prefillNotes) setNotes(prefillNotes);
+    if (prefillLanguage) setPreferredLanguage(prefillLanguage);
+    if (prefillTime && isTimeOnly(prefillTime)) setTime(prefillTime);
+
+    if (prefillDate && isDateOnly(prefillDate)) {
+      const [year, month, day] = prefillDate.split("-").map(Number);
+      const parsed = new Date(year, month - 1, day, 0, 0, 0, 0);
+      if (!Number.isNaN(parsed.getTime())) {
+        setSelectedDate(parsed);
+      }
+    }
+
+    if (prefillCustomerId && customers.some((customer) => customer.id === prefillCustomerId)) {
+      setCustomerId(prefillCustomerId);
+    }
+
+    hasAppliedPrefill.current = true;
+  }, [customers, searchParams]);
 
   useEffect(() => {
     let active = true;

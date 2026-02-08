@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
@@ -13,14 +13,16 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  CalendarPlus,
-  Phone,
-  CheckCircle,
-  XCircle,
-  Clock,
-  Users,
   ArrowRight,
+  CalendarPlus,
+  CheckCircle,
+  Clock,
+  Heart,
+  Phone,
   Play,
+  Sparkles,
+  Users,
+  XCircle,
 } from "lucide-react";
 
 type Call = {
@@ -43,11 +45,96 @@ type Evaluation = {
   };
 };
 
+type ProactiveAction = {
+  id: string;
+  title: string;
+  description: string;
+  customer_id: string | null;
+  call_reason: string;
+  call_purpose: string;
+  notes: string;
+  preferred_language: string;
+  scheduled_date: string;
+  scheduled_time: string;
+};
+
+type RestaurantSuggestion = {
+  id: string;
+  name: string;
+  cuisine: string;
+  area: string;
+  reservation_hint: string;
+  call_action: ProactiveAction;
+};
+
+type DashboardInsights = {
+  summary: string;
+  important_things: string[];
+  proactive_actions: ProactiveAction[];
+  valentines: {
+    prompt: string;
+    restaurants: RestaurantSuggestion[];
+  };
+  source: "openai" | "fallback";
+};
+
+type ScheduledCallResponse = {
+  id: string;
+};
+
+function parseIsoFromAction(action: ProactiveAction): string {
+  const [year, month, day] = action.scheduled_date.split("-").map(Number);
+  const [hour, minute] = action.scheduled_time.split(":").map(Number);
+
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day) ||
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute)
+  ) {
+    const fallback = new Date();
+    fallback.setDate(fallback.getDate() + 1);
+    fallback.setHours(20, 0, 0, 0);
+    return fallback.toISOString();
+  }
+
+  const scheduledAt = new Date(year, month - 1, day, hour, minute, 0, 0);
+  if (Number.isNaN(scheduledAt.getTime())) {
+    const fallback = new Date();
+    fallback.setDate(fallback.getDate() + 1);
+    fallback.setHours(20, 0, 0, 0);
+    return fallback.toISOString();
+  }
+
+  return scheduledAt.toISOString();
+}
+
+function toPrefillUrl(action: ProactiveAction): string {
+  const params = new URLSearchParams({
+    callReason: action.call_reason,
+    callPurpose: action.call_purpose,
+    notes: action.notes,
+    preferredLanguage: action.preferred_language || "English",
+    date: action.scheduled_date,
+    time: action.scheduled_time || "20:00",
+  });
+
+  if (action.customer_id) {
+    params.set("customerId", action.customer_id);
+  }
+
+  return `/schedule?${params.toString()}`;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [upcomingCalls, setUpcomingCalls] = useState<Call[]>([]);
   const [recentEvals, setRecentEvals] = useState<Evaluation[]>([]);
+  const [insights, setInsights] = useState<DashboardInsights | null>(null);
+  const [insightsLoading, setInsightsLoading] = useState(true);
   const [quickCalling, setQuickCalling] = useState(false);
+  const [actionCreatingId, setActionCreatingId] = useState<string | null>(null);
   const [stats, setStats] = useState({
     totalCalls: 0,
     pending: 0,
@@ -61,12 +148,8 @@ export default function DashboardPage() {
       .then((calls: Call[]) => {
         const pending = calls.filter((c) => c.status === "pending");
         const completed = calls.filter((c) => c.status === "completed");
-        const evaluations = calls
-          .filter((c) => c.evaluation)
-          .map((c) => c.evaluation!);
-        const successes = evaluations.filter(
-          (e) => e.result === "success"
-        ).length;
+        const evaluations = calls.filter((c) => c.evaluation).map((c) => c.evaluation!);
+        const successes = evaluations.filter((e) => e.result === "success").length;
 
         setUpcomingCalls(
           pending
@@ -97,6 +180,12 @@ export default function DashboardPage() {
       .then((r) => r.json())
       .then((evals: Evaluation[]) => setRecentEvals(evals.slice(0, 5)))
       .catch(() => setRecentEvals([]));
+
+    fetch("/api/ai/dashboard-insights")
+      .then((r) => r.json())
+      .then((payload: DashboardInsights) => setInsights(payload))
+      .catch(() => setInsights(null))
+      .finally(() => setInsightsLoading(false));
   }, []);
 
   const statusColor: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -107,6 +196,11 @@ export default function DashboardPage() {
     failed: "destructive",
     cancelled: "destructive",
   };
+
+  const sortedActions = useMemo(
+    () => insights?.proactive_actions?.slice(0, 6) || [],
+    [insights]
+  );
 
   async function handleQuickCallDavid() {
     setQuickCalling(true);
@@ -145,6 +239,49 @@ export default function DashboardPage() {
       router.push(`/calls/${payload.call.id}`);
     } finally {
       setQuickCalling(false);
+    }
+  }
+
+  async function handleRunProactiveAction(action: ProactiveAction) {
+    if (!action.customer_id) {
+      router.push(toPrefillUrl(action));
+      return;
+    }
+
+    setActionCreatingId(action.id);
+    try {
+      const response = await fetch("/api/calls", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerId: action.customer_id,
+          scheduledAt: parseIsoFromAction(action),
+          callReason: action.call_reason,
+          callPurpose: action.call_purpose,
+          preferredLanguage: action.preferred_language || "English",
+          notes: action.notes,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorPayload = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        if (errorPayload?.error) {
+          alert(errorPayload.error);
+        }
+        router.push(toPrefillUrl(action));
+        return;
+      }
+
+      const created = (await response.json()) as ScheduledCallResponse;
+      if (created?.id) {
+        router.push(`/calls/${created.id}`);
+      } else {
+        router.push("/schedule");
+      }
+    } finally {
+      setActionCreatingId(null);
     }
   }
 
@@ -210,6 +347,118 @@ export default function DashboardPage() {
         </Card>
       </div>
 
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2">
+          <CardTitle className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5" />
+            AI Ops Copilot
+          </CardTitle>
+          {insights?.source && (
+            <Badge variant={insights.source === "openai" ? "default" : "outline"}>
+              {insights.source === "openai" ? "OpenAI" : "Fallback"}
+            </Badge>
+          )}
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {insightsLoading ? (
+            <p className="text-sm text-muted-foreground">Generating insights...</p>
+          ) : !insights ? (
+            <p className="text-sm text-muted-foreground">
+              Insights are currently unavailable.
+            </p>
+          ) : (
+            <>
+              <p className="text-sm">{insights.summary}</p>
+
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Important Things
+                </p>
+                {insights.important_things.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No key items detected.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {insights.important_things.map((item, idx) => (
+                      <p key={`${item}-${idx}`} className="text-sm text-muted-foreground">
+                        {item}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Proactive Actions (Auto-filled at 8:00 PM)
+                </p>
+                {sortedActions.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No proactive actions right now.</p>
+                ) : (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {sortedActions.map((action) => (
+                      <div key={action.id} className="rounded-lg border p-3">
+                        <p className="text-sm font-medium">{action.title}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{action.description}</p>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          {action.scheduled_date} at {action.scheduled_time}
+                        </p>
+                        <Button
+                          className="mt-3"
+                          size="sm"
+                          disabled={actionCreatingId === action.id}
+                          onClick={() => handleRunProactiveAction(action)}
+                        >
+                          {actionCreatingId === action.id
+                            ? "Creating..."
+                            : "Create Scheduled Call"}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {insights?.valentines?.restaurants?.length ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Heart className="h-5 w-5" />
+              Valentine Suggestions
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">{insights.valentines.prompt}</p>
+            <div className="grid gap-3 md:grid-cols-3">
+              {insights.valentines.restaurants.slice(0, 3).map((restaurant) => (
+                <div key={restaurant.id} className="rounded-lg border p-3">
+                  <p className="text-sm font-medium">{restaurant.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {restaurant.cuisine} · {restaurant.area}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {restaurant.reservation_hint}
+                  </p>
+                  <Button
+                    className="mt-3"
+                    size="sm"
+                    disabled={actionCreatingId === restaurant.call_action.id}
+                    onClick={() => handleRunProactiveAction(restaurant.call_action)}
+                  >
+                    {actionCreatingId === restaurant.call_action.id
+                      ? "Creating..."
+                      : "Schedule Reservation Call"}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
@@ -227,10 +476,7 @@ export default function DashboardPage() {
           <CardContent>
             {upcomingCalls.length === 0 ? (
               <p className="py-4 text-center text-sm text-muted-foreground">
-                No upcoming calls.{" "}
-                <Link href="/schedule" className="text-primary underline">
-                  Schedule one
-                </Link>
+                No upcoming calls. <Link href="/schedule" className="text-primary underline">Schedule one</Link>
               </p>
             ) : (
               <div className="space-y-3">
@@ -240,14 +486,9 @@ export default function DashboardPage() {
                     className="flex items-center justify-between rounded-lg border p-3"
                   >
                     <div>
-                      <p className="text-sm font-medium">
-                        {call.customer.name}
-                      </p>
+                      <p className="text-sm font-medium">{call.customer.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {format(
-                          new Date(call.scheduledAt),
-                          "MMM d, h:mm a"
-                        )}
+                        {format(new Date(call.scheduledAt), "MMM d, h:mm a")}
                       </p>
                     </div>
                     <Badge variant={statusColor[call.status] || "outline"}>
@@ -287,9 +528,7 @@ export default function DashboardPage() {
                     className="flex items-center justify-between rounded-lg border p-3 transition-colors hover:bg-accent"
                   >
                     <div>
-                      <p className="text-sm font-medium">
-                        {ev.scheduledCall.customer.name}
-                      </p>
+                      <p className="text-sm font-medium">{ev.scheduledCall.customer.name}</p>
                       <p className="line-clamp-1 text-xs text-muted-foreground">
                         {ev.rationale || "No rationale"}
                       </p>

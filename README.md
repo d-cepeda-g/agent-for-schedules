@@ -30,10 +30,13 @@ ELEVENLABS_AGENT_ID=...
 ELEVENLABS_PHONE_NUMBER_ID=...
 ELEVENLABS_WEBHOOK_SECRET=...
 TOOL_API_KEY=...
+OPENAI_API_KEY=...
+OPENAI_MODEL=gpt-4.1-mini
 ```
 
 `ELEVENLABS_WEBHOOK_SECRET` is required for validating incoming webhook signatures.
 `TOOL_API_KEY` is required for Agentic Function tool endpoint authentication.
+`OPENAI_API_KEY` (or `OPENAI_KEY`) enables proactive AI summaries and action suggestions on the main dashboard.
 
 ## 3. Agentic Function Tool Endpoints (MVP)
 
@@ -126,3 +129,14 @@ To make the agent use them, reference these variables in your ElevenLabs prompt.
 ## 8. Manual Fallback
 
 If a webhook is delayed or missed, you can still fetch results manually from the UI using **Fetch Evaluation** on a call. The same sync logic is used in both paths.
+
+## 9. Dashboard AI Copilot
+
+The dashboard now calls `GET /api/ai/dashboard-insights` to render:
+
+- AI summary across calls/evaluations/action items
+- Important items needing follow-up
+- Proactive action buttons that create scheduled calls with prefilled reason/purpose/notes
+- A Valentine section with 3 restaurant options and one-click reservation call scheduling
+
+When no OpenAI key is configured or the model fails, the endpoint returns deterministic fallback insights.
