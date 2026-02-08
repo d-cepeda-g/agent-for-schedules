@@ -22,6 +22,7 @@ import {
   Play,
   Sparkles,
   Users,
+  X,
   XCircle,
 } from "lucide-react";
 
@@ -56,6 +57,8 @@ type ProactiveAction = {
   preferred_language: string;
   scheduled_date: string;
   scheduled_time: string;
+  target_name: string | null;
+  target_phone: string | null;
 };
 
 type RestaurantSuggestion = {
@@ -63,6 +66,8 @@ type RestaurantSuggestion = {
   name: string;
   cuisine: string;
   area: string;
+  address: string;
+  phone: string;
   reservation_hint: string;
   call_action: ProactiveAction;
 };
@@ -76,6 +81,7 @@ type DashboardInsights = {
     restaurants: RestaurantSuggestion[];
   };
   source: "openai" | "fallback";
+  source_reason: string | null;
 };
 
 type ScheduledCallResponse = {
@@ -83,6 +89,14 @@ type ScheduledCallResponse = {
 };
 
 const DISMISSED_ACTIONS_STORAGE_KEY = "dashboard:dismissed_proactive_action_ids";
+const DISMISSED_VALENTINE_PANEL_STORAGE_KEY =
+  "dashboard:dismissed_valentine_panel";
+
+type CustomerLookup = {
+  id: string;
+  name: string;
+  phone: string;
+};
 
 function readDismissedActionIds(): string[] {
   if (typeof window === "undefined") return [];
@@ -107,6 +121,31 @@ function writeDismissedActionIds(ids: string[]): void {
     DISMISSED_ACTIONS_STORAGE_KEY,
     JSON.stringify(ids)
   );
+}
+
+function readValentinePanelDismissed(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return (
+      window.localStorage.getItem(DISMISSED_VALENTINE_PANEL_STORAGE_KEY) ===
+      "true"
+    );
+  } catch {
+    return false;
+  }
+}
+
+function writeValentinePanelDismissed(value: boolean): void {
+  if (typeof window === "undefined") return;
+  if (!value) {
+    window.localStorage.removeItem(DISMISSED_VALENTINE_PANEL_STORAGE_KEY);
+    return;
+  }
+  window.localStorage.setItem(DISMISSED_VALENTINE_PANEL_STORAGE_KEY, "true");
+}
+
+function normalizePhoneForMatch(phone: string): string {
+  return phone.replace(/\D+/g, "");
 }
 
 function parseIsoFromAction(action: ProactiveAction): string {
@@ -163,6 +202,7 @@ export default function DashboardPage() {
   const [quickCalling, setQuickCalling] = useState(false);
   const [actionCreatingId, setActionCreatingId] = useState<string | null>(null);
   const [dismissedActionIds, setDismissedActionIds] = useState<string[]>([]);
+  const [valentinePanelDismissed, setValentinePanelDismissed] = useState(false);
   const [stats, setStats] = useState({
     totalCalls: 0,
     pending: 0,
@@ -218,6 +258,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     setDismissedActionIds(readDismissedActionIds());
+    setValentinePanelDismissed(readValentinePanelDismissed());
   }, []);
 
   const statusColor: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -293,18 +334,68 @@ export default function DashboardPage() {
   }
 
   async function handleRunProactiveAction(action: ProactiveAction) {
-    if (!action.customer_id) {
-      router.push(toPrefillUrl(action));
-      return;
-    }
-
     setActionCreatingId(action.id);
     try {
+      let targetCustomerId = action.customer_id;
+
+      if (!targetCustomerId) {
+        const targetName = action.target_name?.trim() || "";
+        const targetPhone = action.target_phone?.trim() || "";
+
+        if (targetName && targetPhone) {
+          const lookupResponse = await fetch(
+            `/api/customers?q=${encodeURIComponent(targetPhone)}`
+          );
+
+          if (lookupResponse.ok) {
+            const candidates = (await lookupResponse.json()) as CustomerLookup[];
+            const normalizedTargetPhone = normalizePhoneForMatch(targetPhone);
+            const exactMatch = candidates.find(
+              (candidate) =>
+                normalizePhoneForMatch(candidate.phone) === normalizedTargetPhone
+            );
+            if (exactMatch?.id) {
+              targetCustomerId = exactMatch.id;
+            }
+          }
+
+          if (!targetCustomerId) {
+            const createCustomerResponse = await fetch("/api/customers", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                name: targetName,
+                phone: targetPhone,
+                email: "",
+                notes:
+                  action.notes ||
+                  "Auto-created from dashboard AI restaurant suggestion",
+                preferredLanguage: action.preferred_language || "English",
+              }),
+            });
+
+            if (createCustomerResponse.ok) {
+              const createdCustomer = (await createCustomerResponse.json()) as {
+                id?: string;
+              };
+              if (createdCustomer?.id) {
+                targetCustomerId = createdCustomer.id;
+              }
+            }
+          }
+        }
+      }
+
+      if (!targetCustomerId) {
+        router.push(toPrefillUrl(action));
+        return;
+      }
+
       const response = await fetch("/api/calls", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          customerId: action.customer_id,
+          customerId: targetCustomerId,
           scheduledAt: parseIsoFromAction(action),
           callReason: action.call_reason,
           callPurpose: action.call_purpose,
@@ -347,6 +438,13 @@ export default function DashboardPage() {
   function handleResetDismissedSuggestions() {
     setDismissedActionIds([]);
     writeDismissedActionIds([]);
+    setValentinePanelDismissed(false);
+    writeValentinePanelDismissed(false);
+  }
+
+  function handleDismissValentinePanel() {
+    setValentinePanelDismissed(true);
+    writeValentinePanelDismissed(true);
   }
 
   return (
@@ -418,7 +516,7 @@ export default function DashboardPage() {
             AI Ops Copilot
           </CardTitle>
           <div className="flex items-center gap-2">
-            {dismissedActionIds.length > 0 ? (
+            {dismissedActionIds.length > 0 || valentinePanelDismissed ? (
               <Button
                 variant="outline"
                 size="sm"
@@ -444,6 +542,9 @@ export default function DashboardPage() {
           ) : (
             <>
               <p className="text-sm">{insights.summary}</p>
+              {insights.source === "fallback" && insights.source_reason ? (
+                <p className="text-xs text-amber-700">{insights.source_reason}</p>
+              ) : null}
 
               <div className="space-y-2">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -505,13 +606,21 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      {visibleValentineRestaurants.length ? (
+      {!valentinePanelDismissed && visibleValentineRestaurants.length ? (
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between gap-2">
             <CardTitle className="flex items-center gap-2">
               <Heart className="h-5 w-5" />
               Valentine Suggestions
             </CardTitle>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Dismiss Valentine suggestions"
+              onClick={handleDismissValentinePanel}
+            >
+              <X className="h-4 w-4" />
+            </Button>
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">
@@ -524,6 +633,12 @@ export default function DashboardPage() {
                   <p className="text-sm font-medium">{restaurant.name}</p>
                   <p className="text-xs text-muted-foreground">
                     {restaurant.cuisine} · {restaurant.area}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {restaurant.address}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {restaurant.phone}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {restaurant.reservation_hint}

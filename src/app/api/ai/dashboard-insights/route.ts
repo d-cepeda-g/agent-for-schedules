@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { createJsonCompletion, hasOpenAiApiKey } from "@/lib/openai";
+import { isLikelyPhoneNumber } from "@/lib/validation";
 
 type ProactiveAction = {
   id: string;
@@ -13,6 +14,8 @@ type ProactiveAction = {
   preferred_language: string;
   scheduled_date: string;
   scheduled_time: string;
+  target_name: string | null;
+  target_phone: string | null;
 };
 
 type RestaurantSuggestion = {
@@ -20,6 +23,8 @@ type RestaurantSuggestion = {
   name: string;
   cuisine: string;
   area: string;
+  address: string;
+  phone: string;
   reservation_hint: string;
   call_action: ProactiveAction;
 };
@@ -33,6 +38,7 @@ type DashboardInsights = {
     restaurants: RestaurantSuggestion[];
   };
   source: "openai" | "fallback";
+  source_reason: string | null;
 };
 
 type CustomerLite = {
@@ -101,6 +107,12 @@ function sanitizeAction(
   const callPurpose = normalizeText(record.call_purpose, description);
   const notes = normalizeText(record.notes, callPurpose);
   const preferredLanguage = normalizeText(record.preferred_language, "English");
+  const targetName = normalizeText(record.target_name) || null;
+  const targetPhoneRaw = normalizeText(record.target_phone) || null;
+  const targetPhone =
+    targetPhoneRaw && isLikelyPhoneNumber(targetPhoneRaw)
+      ? targetPhoneRaw
+      : null;
 
   const rawDate = normalizeText(record.scheduled_date, fallbackDate);
   const scheduledDate = isDateOnly(rawDate) ? rawDate : fallbackDate;
@@ -119,6 +131,8 @@ function sanitizeAction(
     preferred_language: preferredLanguage,
     scheduled_date: scheduledDate,
     scheduled_time: scheduledTime || "20:00",
+    target_name: targetName,
+    target_phone: targetPhone,
   };
 }
 
@@ -137,51 +151,77 @@ function isValentineAction(action: ProactiveAction): boolean {
 }
 
 function buildFallbackValentineRestaurants(
+  customers: CustomerLite[],
   targetCustomer: CustomerLite | null,
   valentineDate: string
 ): RestaurantSuggestion[] {
-  const customerId = targetCustomer?.id || null;
-  const customerName = targetCustomer?.name || "the customer";
+  const customerName = targetCustomer?.name || "the caller";
+
+  const customerByPhone = new Map(
+    customers.map((customer) => [customer.phone.replace(/\D+/g, ""), customer.id])
+  );
 
   const restaurants = [
     {
-      id: "rest-1",
+      id: "rest-tantris",
       name: "Tantris Maison Culinaire",
-      cuisine: "Modern European",
+      cuisine: "French Fine Dining",
       area: "Schwabing, Munich",
-      reservation_hint: "Call early evening and ask for a quiet table for two.",
+      address: "Johann-Fichte-Strasse 7, 80805 Munich",
+      phone: "+49 89 36 19 59-0",
+      reservation_hint:
+        "Ask for a two-person Valentine dinner reservation around 20:00.",
     },
     {
-      id: "rest-2",
-      name: "Theresa Grill",
-      cuisine: "Steakhouse",
-      area: "Schwabing, Munich",
-      reservation_hint: "Ask about Valentine tasting menu availability.",
-    },
-    {
-      id: "rest-3",
+      id: "rest-matsuhisa-munich",
       name: "Matsuhisa Munich",
       cuisine: "Japanese-Peruvian",
       area: "Altstadt, Munich",
-      reservation_hint: "Request a dinner slot between 19:30 and 20:30.",
+      address: "Neuturmstrasse 1, 80331 Munich",
+      phone: "+49 (89) 290 98 834",
+      reservation_hint:
+        "Request the earliest available dinner table for two close to 20:00.",
+    },
+    {
+      id: "rest-brenner",
+      name: "brenner",
+      cuisine: "Italian / Grill",
+      area: "Altstadt-Lehel, Munich",
+      address: "Maximilianstrasse 15, 80539 Munich",
+      phone: "+49 89 45 22 880",
+      reservation_hint:
+        "Ask whether a quieter table for two is available around 20:00.",
     },
   ];
 
-  return restaurants.map((restaurant) => ({
-    ...restaurant,
-    call_action: {
-      id: `valentine-${restaurant.id}`,
-      title: `Book ${restaurant.name}`,
-      description: `Call to request a Valentine date reservation at ${restaurant.name}.`,
-      customer_id: customerId,
-      call_reason: `Valentine restaurant reservation at ${restaurant.name}`,
-      call_purpose: `Call ${restaurant.name} to book a dinner table for ${customerName} on ${valentineDate}.`,
-      notes: `Target restaurant: ${restaurant.name} (${restaurant.area}). ${restaurant.reservation_hint}`,
-      preferred_language: "English",
-      scheduled_date: valentineDate,
-      scheduled_time: "20:00",
-    },
-  }));
+  return restaurants.map((restaurant) => {
+    const customerId =
+      customerByPhone.get(restaurant.phone.replace(/\D+/g, "")) || null;
+
+    return {
+      ...restaurant,
+      call_action: {
+        id: `valentine-${restaurant.id}`,
+        title: `Book ${restaurant.name}`,
+        description: `Call to request a Valentine reservation at ${restaurant.name}.`,
+        customer_id: customerId,
+        call_reason: `Valentine reservation inquiry at ${restaurant.name}`,
+        call_purpose: `Call ${restaurant.name} to book a dinner table for ${customerName} on ${valentineDate}.`,
+        notes: [
+          `Restaurant: ${restaurant.name}`,
+          `Address: ${restaurant.address}`,
+          `Phone: ${restaurant.phone}`,
+          `Request: table for two around 20:00 on ${valentineDate}`,
+          `Hint: ${restaurant.reservation_hint}`,
+        ].join("\n"),
+        preferred_language: "English",
+        scheduled_date: valentineDate,
+        scheduled_time: "20:00",
+        target_name: restaurant.name,
+        target_phone: restaurant.phone,
+      },
+    };
+  });
 }
 
 function buildFallbackInsights(calls: Array<{
@@ -190,7 +230,7 @@ function buildFallbackInsights(calls: Array<{
   callReason: string;
   customer: CustomerLite;
   actionItems: Array<{ completed: boolean; title: string; detail: string }>;
-}>): DashboardInsights {
+}>, customers: CustomerLite[], reason: string): DashboardInsights {
   const fallbackDate = getDefaultScheduledDate();
   const valentineDate = getUpcomingValentineDate();
 
@@ -221,10 +261,16 @@ function buildFallbackInsights(calls: Array<{
       preferred_language: "English",
       scheduled_date: fallbackDate,
       scheduled_time: "20:00",
+      target_name: mostRecent.customer.name,
+      target_phone: mostRecent.customer.phone,
     });
   }
 
-  const restaurants = buildFallbackValentineRestaurants(targetCustomer, valentineDate);
+  const restaurants = buildFallbackValentineRestaurants(
+    customers,
+    targetCustomer,
+    valentineDate
+  );
 
   const important = [
     `Total calls tracked: ${total}`,
@@ -244,6 +290,7 @@ function buildFallbackInsights(calls: Array<{
       restaurants,
     },
     source: "fallback",
+    source_reason: reason,
   };
 }
 
@@ -307,6 +354,8 @@ function sanitizeInsightsResponse(
         name: normalizeText(itemRecord.name, `Restaurant ${index + 1}`),
         cuisine: normalizeText(itemRecord.cuisine, "Cuisine not specified"),
         area: normalizeText(itemRecord.area, "Area not specified"),
+        address: normalizeText(itemRecord.address, "Address not provided"),
+        phone: normalizeText(itemRecord.phone, ""),
         reservation_hint: normalizeText(
           itemRecord.reservation_hint,
           "Ask for available reservation slots around 20:00."
@@ -338,6 +387,7 @@ function sanitizeInsightsResponse(
       restaurants: restaurants.length > 0 ? restaurants : fallback.valentines.restaurants,
     },
     source: "openai",
+    source_reason: null,
   };
 }
 
@@ -382,7 +432,11 @@ export async function GET() {
     }),
   ]);
 
-  const fallback = buildFallbackInsights(calls);
+  const fallback = buildFallbackInsights(
+    calls,
+    customers,
+    "OPENAI_API_KEY is not configured in this environment."
+  );
 
   if (!hasOpenAiApiKey()) {
     return NextResponse.json(fallback);
@@ -409,7 +463,9 @@ export async function GET() {
       "Do not include any Valentine's actions in proactive_actions; keep Valentine's actions only in valentines.restaurants[].call_action.",
       "valentines must include prompt and exactly 3 restaurants.",
       "Each valentines restaurant must include id,name,cuisine,area,reservation_hint,call_action.",
-      "Each call_action must follow the same action schema and schedule at 20:00.",
+      "Each valentines restaurant should also include address and phone when available.",
+      "Each call_action must follow the same action schema and schedule at 20:00, and may include target_name/target_phone.",
+      "Default Valentine's restaurant location to Munich, Germany unless the input data clearly indicates another city.",
       "Be concise and actionable.",
     ].join(" ");
 
@@ -427,7 +483,14 @@ export async function GET() {
 
     const insights = sanitizeInsightsResponse(raw, customers, fallback);
     return NextResponse.json(insights);
-  } catch {
-    return NextResponse.json(fallback);
+  } catch (error) {
+    const reason =
+      error instanceof Error && error.message
+        ? `OpenAI request failed. Using local fallback. (${error.message})`
+        : "OpenAI request failed. Using local fallback.";
+    return NextResponse.json({
+      ...fallback,
+      source_reason: reason,
+    });
   }
 }
