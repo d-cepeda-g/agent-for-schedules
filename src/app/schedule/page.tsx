@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { format } from "date-fns";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -52,7 +52,7 @@ function isTimeOnly(value: string): boolean {
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
 }
 
-export default function SchedulePage() {
+function SchedulePageContent() {
   const searchParams = useSearchParams();
   const hasAppliedPrefill = useRef(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -431,5 +431,13 @@ export default function SchedulePage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function SchedulePage() {
+  return (
+    <Suspense fallback={<div className="py-12 text-center text-muted-foreground">Loading schedule...</div>}>
+      <SchedulePageContent />
+    </Suspense>
   );
 }
