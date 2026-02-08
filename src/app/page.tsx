@@ -18,6 +18,7 @@ import {
   CheckCircle,
   Clock,
   Heart,
+  Loader2,
   Phone,
   Play,
   Sparkles,
@@ -515,26 +516,43 @@ export default function DashboardPage() {
             <Sparkles className="h-5 w-5" />
             AI Ops Copilot
           </CardTitle>
-          <div className="flex items-center gap-2">
-            {dismissedActionIds.length > 0 || valentinePanelDismissed ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleResetDismissedSuggestions}
-              >
-                Reset Hidden Suggestions
-              </Button>
-            ) : null}
-            {insights?.source && (
-              <Badge variant={insights.source === "openai" ? "default" : "outline"}>
-                {insights.source === "openai" ? "OpenAI" : "Fallback"}
-              </Badge>
-            )}
-          </div>
+          {dismissedActionIds.length > 0 || valentinePanelDismissed ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleResetDismissedSuggestions}
+            >
+              Reset Hidden Suggestions
+            </Button>
+          ) : null}
         </CardHeader>
         <CardContent className="space-y-4">
           {insightsLoading ? (
-            <p className="text-sm text-muted-foreground">Generating insights...</p>
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Generating insights...
+              </div>
+              <div className="space-y-2">
+                <div className="h-3 w-full animate-pulse rounded bg-muted" />
+                <div className="h-3 w-4/5 animate-pulse rounded bg-muted" />
+              </div>
+              <div className="space-y-2">
+                <div className="h-3 w-48 animate-pulse rounded bg-muted" />
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-2 rounded-lg border p-3">
+                    <div className="h-3 w-2/3 animate-pulse rounded bg-muted" />
+                    <div className="h-3 w-full animate-pulse rounded bg-muted" />
+                    <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
+                  </div>
+                  <div className="space-y-2 rounded-lg border p-3">
+                    <div className="h-3 w-2/3 animate-pulse rounded bg-muted" />
+                    <div className="h-3 w-full animate-pulse rounded bg-muted" />
+                    <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
+                  </div>
+                </div>
+              </div>
+            </div>
           ) : !insights ? (
             <p className="text-sm text-muted-foreground">
               Insights are currently unavailable.
