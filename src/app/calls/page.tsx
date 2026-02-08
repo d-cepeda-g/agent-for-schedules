@@ -43,34 +43,69 @@ type Call = {
   evaluation: { id: string; result: string } | null;
 };
 
+type PaginatedCallsResponse = {
+  items: Call[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+};
+
 export default function CallsPage() {
   const [calls, setCalls] = useState<Call[]>([]);
   const [statusFilter, setStatusFilter] = useState("completed");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [dispatching, setDispatching] = useState<string | null>(null);
   const [deletingCallId, setDeletingCallId] = useState<string | null>(null);
 
-  const refreshCalls = useCallback(async (filter: string) => {
-    const params = filter !== "all" ? `?status=${filter}` : "";
-    const response = await fetch(`/api/calls${params}`);
+  const refreshCalls = useCallback(async (filter: string, currentPage: number, currentPageSize: number) => {
+    const params = new URLSearchParams();
+    if (filter !== "all") {
+      params.set("status", filter);
+    }
+    params.set("page", String(currentPage));
+    params.set("pageSize", String(currentPageSize));
+
+    const response = await fetch(`/api/calls?${params.toString()}`);
     if (!response.ok) {
       setCalls([]);
+      setTotal(0);
+      setTotalPages(1);
       return;
     }
-    const data = (await response.json()) as Call[];
-    setCalls(data);
+
+    const payload = (await response.json()) as Call[] | PaginatedCallsResponse;
+    if (Array.isArray(payload)) {
+      setCalls(payload);
+      setTotal(payload.length);
+      setTotalPages(1);
+      return;
+    }
+
+    setCalls(payload.items);
+    setTotal(payload.total);
+    setTotalPages(payload.totalPages);
+    if (payload.page > payload.totalPages) {
+      setPage(payload.totalPages);
+    }
   }, []);
 
   useEffect(() => {
     setLoading(true);
-    void refreshCalls(statusFilter)
+    void refreshCalls(statusFilter, page, pageSize)
       .catch(() => {
         setCalls([]);
+        setTotal(0);
+        setTotalPages(1);
       })
       .finally(() => {
         setLoading(false);
       });
-  }, [statusFilter, refreshCalls]);
+  }, [statusFilter, page, pageSize, refreshCalls]);
 
   async function handleDispatch(callId: string) {
     setDispatching(callId);
@@ -82,7 +117,7 @@ export default function CallsPage() {
         const data = await res.json();
         alert(data.error || "Failed to dispatch call");
       } else {
-        await refreshCalls(statusFilter);
+        await refreshCalls(statusFilter, page, pageSize);
       }
     } finally {
       setDispatching(null);
@@ -96,7 +131,7 @@ export default function CallsPage() {
       alert(data.error || "Failed to fetch evaluation");
       return;
     }
-    await refreshCalls(statusFilter);
+    await refreshCalls(statusFilter, page, pageSize);
   }
 
   async function handleDeleteCall(call: Call) {
@@ -122,7 +157,7 @@ export default function CallsPage() {
         return;
       }
 
-      await refreshCalls(statusFilter);
+      await refreshCalls(statusFilter, page, pageSize);
     } finally {
       setDeletingCallId(null);
     }
@@ -147,33 +182,53 @@ export default function CallsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">Call History</h1>
           <p className="text-muted-foreground">
             View, dispatch, and evaluate calls
           </p>
         </div>
-        <Select
-          value={statusFilter}
-          onValueChange={(value) => {
-            setLoading(true);
-            setStatusFilter(value);
-          }}
-        >
-          <SelectTrigger className="w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            <SelectItem value="pending">Pending</SelectItem>
-            <SelectItem value="dispatching">Dispatching</SelectItem>
-            <SelectItem value="dispatched">Dispatched</SelectItem>
-            <SelectItem value="completed">Completed</SelectItem>
-            <SelectItem value="failed">Failed</SelectItem>
-            <SelectItem value="cancelled">Cancelled</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <Select
+            value={statusFilter}
+            onValueChange={(value) => {
+              setLoading(true);
+              setPage(1);
+              setStatusFilter(value);
+            }}
+          >
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="dispatching">Dispatching</SelectItem>
+              <SelectItem value="dispatched">Dispatched</SelectItem>
+              <SelectItem value="completed">Completed</SelectItem>
+              <SelectItem value="failed">Failed</SelectItem>
+              <SelectItem value="cancelled">Cancelled</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select
+            value={String(pageSize)}
+            onValueChange={(value) => {
+              setLoading(true);
+              setPage(1);
+              setPageSize(Number.parseInt(value, 10));
+            }}
+          >
+            <SelectTrigger className="w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="10">10 / page</SelectItem>
+              <SelectItem value="25">25 / page</SelectItem>
+              <SelectItem value="50">50 / page</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <Card>
@@ -278,6 +333,36 @@ export default function CallsPage() {
               </TableBody>
             </Table>
           )}
+          {!loading ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t px-4 py-3 text-sm text-muted-foreground">
+              <p>
+                {total === 0
+                  ? "Showing 0 of 0"
+                  : `Showing ${(page - 1) * pageSize + 1}-${(page - 1) * pageSize + calls.length} of ${total}`}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((value) => Math.max(1, value - 1))}
+                  disabled={page <= 1}
+                >
+                  Previous
+                </Button>
+                <span>
+                  Page {page} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
+                  disabled={page >= totalPages}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
     </div>

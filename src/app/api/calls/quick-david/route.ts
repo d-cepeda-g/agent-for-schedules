@@ -4,9 +4,46 @@ import { dispatchScheduledCall } from "@/lib/calls";
 import { db } from "@/lib/db";
 import { normalizeOptionalString } from "@/lib/validation";
 
+const QUICK_CALL_DUPLICATE_WINDOW_MS = 60_000;
+
+function isAuthorizedQuickCall(request: NextRequest): boolean {
+  const expectedApiKey = process.env.TOOL_API_KEY?.trim();
+  if (!expectedApiKey) return process.env.ENABLE_QUICK_DAVID === "true";
+
+  const headerApiKey = request.headers.get("x-tool-api-key")?.trim() || "";
+  const authHeader = request.headers.get("authorization")?.trim() || "";
+  const bearerToken = authHeader.startsWith("Bearer ")
+    ? authHeader.slice("Bearer ".length).trim()
+    : "";
+
+  return (
+    headerApiKey === expectedApiKey ||
+    bearerToken === expectedApiKey ||
+    process.env.ENABLE_QUICK_DAVID === "true"
+  );
+}
+
+function floorToMinute(value: Date): Date {
+  const normalized = new Date(value);
+  normalized.setSeconds(0, 0);
+  return normalized;
+}
+
 export async function POST(request: NextRequest) {
   try {
+    if (!isAuthorizedQuickCall(request)) {
+      return NextResponse.json(
+        { error: "Quick call trigger is disabled or unauthorized" },
+        { status: 403 }
+      );
+    }
+
     const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+    const triggerMeta = {
+      userAgent: request.headers.get("user-agent"),
+      forwardedFor: request.headers.get("x-forwarded-for"),
+      referer: request.headers.get("referer"),
+    };
     const agentId = process.env.ELEVENLABS_AGENT_ID;
     if (!agentId) {
       return NextResponse.json(
@@ -42,10 +79,71 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const scheduledAt = floorToMinute(new Date());
+    const duplicate = await db.scheduledCall.findFirst({
+      where: {
+        customerId: customer.id,
+        scheduledAt: {
+          gte: new Date(scheduledAt.getTime() - QUICK_CALL_DUPLICATE_WINDOW_MS),
+          lte: new Date(scheduledAt.getTime() + QUICK_CALL_DUPLICATE_WINDOW_MS),
+        },
+        callReason,
+        callPurpose,
+        notes,
+        status: { in: ["pending", "dispatching", "dispatched", "completed", "failed"] },
+      },
+      orderBy: { createdAt: "desc" },
+      include: {
+        customer: { select: { id: true, name: true, phone: true } },
+      },
+    });
+
+    if (duplicate) {
+      await createCallLogSafe({
+        scheduledCallId: duplicate.id,
+        event: "quick_call_deduplicated",
+        message: "Duplicate quick-call trigger ignored",
+        details: triggerMeta,
+      });
+
+      if (["pending", "failed"].includes(duplicate.status)) {
+        const dispatchResult = await dispatchScheduledCall(duplicate.id, {
+          force: true,
+          allowedStatuses: ["pending", "failed"],
+        });
+
+        if (!dispatchResult.ok && dispatchResult.status !== 409) {
+          return NextResponse.json(
+            { error: dispatchResult.error },
+            { status: dispatchResult.status }
+          );
+        }
+
+        if (dispatchResult.ok) {
+          return NextResponse.json(
+            {
+              call: dispatchResult.call,
+              elevenlabs: dispatchResult.elevenlabs,
+              deduplicated: true,
+            },
+            { status: 200 }
+          );
+        }
+      }
+
+      return NextResponse.json(
+        {
+          call: duplicate,
+          deduplicated: true,
+        },
+        { status: 200 }
+      );
+    }
+
     const call = await db.scheduledCall.create({
       data: {
         customerId: customer.id,
-        scheduledAt: new Date(),
+        scheduledAt,
         notes,
         callReason,
         callPurpose,
@@ -61,7 +159,7 @@ export async function POST(request: NextRequest) {
       scheduledCallId: call.id,
       event: "quick_call_requested",
       message: "Quick call requested from dashboard",
-      details: { customerId: customer.id, customerName: customer.name },
+      details: { customerId: customer.id, customerName: customer.name, ...triggerMeta },
     });
 
     const dispatchResult = await dispatchScheduledCall(call.id, {
@@ -80,6 +178,7 @@ export async function POST(request: NextRequest) {
       {
         call: dispatchResult.call,
         elevenlabs: dispatchResult.elevenlabs,
+        deduplicated: false,
       },
       { status: 201 }
     );
