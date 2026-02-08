@@ -60,6 +60,17 @@ function buildPromptVariables(call: CallWithCustomer): Record<string, string> {
   );
 }
 
+function buildPromptVariableLogMeta(promptVariables: Record<string, string>) {
+  const entries = Object.entries(promptVariables);
+  return {
+    count: entries.length,
+    keys: entries.map(([key]) => key),
+    lengths: Object.fromEntries(
+      entries.map(([key, value]) => [key, value.length])
+    ) as Record<string, number>,
+  };
+}
+
 export async function dispatchScheduledCall(
   callId: string,
   options: DispatchOptions = {}
@@ -113,12 +124,13 @@ export async function dispatchScheduledCall(
 
   try {
     const promptVariables = buildPromptVariables(call);
+    const promptVariableMeta = buildPromptVariableLogMeta(promptVariables);
 
     await createCallLogSafe({
       scheduledCallId: call.id,
       event: "dispatch_attempt",
       message: `Dispatching outbound call to ${call.customer.phone}`,
-      details: { promptVariables },
+      details: { promptVariables: promptVariableMeta },
     });
 
     const result = await makeOutboundCall(

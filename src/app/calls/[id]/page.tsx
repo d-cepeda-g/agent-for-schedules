@@ -80,6 +80,18 @@ function isCallDetail(payload: unknown): payload is CallDetail {
   );
 }
 
+function formatLogDetails(details: string): string {
+  const trimmed = details.trim();
+  if (!trimmed) return "";
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    return trimmed;
+  }
+}
+
 export default function CallDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -327,8 +339,8 @@ export default function CallDetailPage() {
                         {format(new Date(log.createdAt), "MMM d, yyyy h:mm:ss a")} · {log.event}
                       </p>
                       {log.details && (
-                        <pre className="mt-2 overflow-x-auto rounded bg-muted p-2 text-xs">
-                          {log.details}
+                        <pre className="mt-2 max-w-full overflow-auto rounded bg-muted p-2 text-xs whitespace-pre-wrap break-all [overflow-wrap:anywhere]">
+                          {formatLogDetails(log.details)}
                         </pre>
                       )}
                     </div>
