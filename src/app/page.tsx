@@ -742,6 +742,129 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {!valentinePanelDismissed && visibleValentineRestaurants.length ? (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2">
+            <CardTitle className="flex items-center gap-2">
+              <Heart className="h-5 w-5" />
+              Valentine Suggestions
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => void handleScheduleAllValentineCalls()}
+                disabled={bulkValentineScheduling}
+              >
+                {bulkValentineScheduling
+                  ? "Scheduling..."
+                  : "Schedule 3 Reservation Calls"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Dismiss Valentine suggestions"
+                onClick={handleDismissValentinePanel}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid gap-3 md:grid-cols-3">
+              {visibleValentineRestaurants.map((restaurant) => (
+                <div key={restaurant.id} className="rounded-lg border p-3">
+                  <p className="text-sm font-medium">{restaurant.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {restaurant.cuisine} · {restaurant.area}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {restaurant.address}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {restaurant.phone}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {restaurant.reservation_hint}
+                  </p>
+                  <div className="mt-3 flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      disabled={actionCreatingId === restaurant.call_action.id}
+                      onClick={() => handleRunProactiveAction(restaurant.call_action)}
+                    >
+                      {actionCreatingId === restaurant.call_action.id
+                        ? "Creating..."
+                        : "Schedule Reservation Call"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        handleDismissProactiveAction(restaurant.call_action.id)
+                      }
+                    >
+                      Dismiss
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {valentineAvailabilitySummary ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between gap-2">
+              <span>{valentineAvailabilitySummary.title}</span>
+              <Badge variant="outline" className="capitalize">
+                {valentineAvailabilitySummary.status}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm">{valentineAvailabilitySummary.summary}</p>
+            <div className="grid gap-3 md:grid-cols-2">
+              {valentineAvailabilitySummary.options.map((option) => {
+                const selected = selectedValentineOption?.id === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => setSelectedValentineOptionId(option.id)}
+                    className={`rounded-lg border p-3 text-left transition ${
+                      selected
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:bg-accent/40"
+                    }`}
+                  >
+                    <p className="text-sm font-medium">{option.restaurant_name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {option.available_time} - Available
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {option.cuisine} - {option.area}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+            <div>
+              <Button
+                disabled={!selectedValentineOption}
+                onClick={() => void handleConfirmValentineSelectionAndCall()}
+              >
+                {selectedValentineOption &&
+                actionCreatingId === selectedValentineOption.call_action.id
+                  ? "Creating..."
+                  : valentineAvailabilitySummary.confirm_button_label}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-2">
           <CardTitle className="flex items-center gap-2">
@@ -908,129 +1031,6 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
-
-      {valentineAvailabilitySummary ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between gap-2">
-              <span>{valentineAvailabilitySummary.title}</span>
-              <Badge variant="outline" className="capitalize">
-                {valentineAvailabilitySummary.status}
-              </Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm">{valentineAvailabilitySummary.summary}</p>
-            <div className="grid gap-3 md:grid-cols-2">
-              {valentineAvailabilitySummary.options.map((option) => {
-                const selected = selectedValentineOption?.id === option.id;
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => setSelectedValentineOptionId(option.id)}
-                    className={`rounded-lg border p-3 text-left transition ${
-                      selected
-                        ? "border-primary bg-primary/5"
-                        : "border-border hover:bg-accent/40"
-                    }`}
-                  >
-                    <p className="text-sm font-medium">{option.restaurant_name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {option.available_time} - Available
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {option.cuisine} - {option.area}
-                    </p>
-                  </button>
-                );
-              })}
-            </div>
-            <div>
-              <Button
-                disabled={!selectedValentineOption}
-                onClick={() => void handleConfirmValentineSelectionAndCall()}
-              >
-                {selectedValentineOption &&
-                actionCreatingId === selectedValentineOption.call_action.id
-                  ? "Creating..."
-                  : valentineAvailabilitySummary.confirm_button_label}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {!valentinePanelDismissed && visibleValentineRestaurants.length ? (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2">
-            <CardTitle className="flex items-center gap-2">
-              <Heart className="h-5 w-5" />
-              Valentine Suggestions
-            </CardTitle>
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                onClick={() => void handleScheduleAllValentineCalls()}
-                disabled={bulkValentineScheduling}
-              >
-                {bulkValentineScheduling
-                  ? "Scheduling..."
-                  : "Schedule 3 Reservation Calls"}
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Dismiss Valentine suggestions"
-                onClick={handleDismissValentinePanel}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid gap-3 md:grid-cols-3">
-              {visibleValentineRestaurants.map((restaurant) => (
-                <div key={restaurant.id} className="rounded-lg border p-3">
-                  <p className="text-sm font-medium">{restaurant.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {restaurant.cuisine} · {restaurant.area}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {restaurant.address}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {restaurant.phone}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {restaurant.reservation_hint}
-                  </p>
-                  <div className="mt-3 flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      disabled={actionCreatingId === restaurant.call_action.id}
-                      onClick={() => handleRunProactiveAction(restaurant.call_action)}
-                    >
-                      {actionCreatingId === restaurant.call_action.id
-                        ? "Creating..."
-                        : "Schedule Reservation Call"}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        handleDismissProactiveAction(restaurant.call_action.id)
-                      }
-                    >
-                      Dismiss
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
