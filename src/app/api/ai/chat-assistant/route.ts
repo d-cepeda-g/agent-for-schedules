@@ -68,11 +68,35 @@ const SERVICE_PATTERNS: Array<{ serviceType: string; keywords: string[] }> = [
   },
   {
     serviceType: "bar",
-    keywords: ["bar", "rooftop", "cocktail", "lounge", "nightlife", "latin bar"],
+    keywords: [
+      "bar",
+      "rooftop",
+      "cocktail",
+      "lounge",
+      "nightlife",
+      "latin bar",
+      "pub",
+      "club",
+      "speakeasy",
+    ],
   },
   {
     serviceType: "restaurant",
-    keywords: ["restaurant", "dinner", "lunch", "reservation", "table"],
+    keywords: [
+      "restaurant",
+      "resto",
+      "dinner",
+      "lunch",
+      "brunch",
+      "reservation",
+      "book a table",
+      "table",
+      "food",
+      "cuisine",
+      "eat",
+      "cafe",
+      "bistro",
+    ],
   },
   { serviceType: "dentist", keywords: ["dentist", "dental", "teeth", "tooth"] },
   {
@@ -93,6 +117,18 @@ const SERVICE_PATTERNS: Array<{ serviceType: string; keywords: string[] }> = [
     keywords: ["pediatrician", "pediatric", "child", "kids"],
   },
 ];
+
+const SERVICE_PRIORITY: Record<string, number> = {
+  restaurant: 4,
+  bar: 4,
+  "event venue": 3,
+  dentist: 2,
+  "auto repair": 2,
+  hairdresser: 2,
+  "physical therapy": 2,
+  optometrist: 2,
+  pediatrician: 2,
+};
 
 const MONTH_INDEX_BY_NAME: Record<string, number> = {
   jan: 0,
@@ -480,14 +516,24 @@ function detectPreferredLanguage(message: string): string {
 
 function detectServiceType(message: string): string {
   const normalized = message.toLowerCase();
+  let bestServiceType = "";
+  let bestScore = 0;
 
   for (const pattern of SERVICE_PATTERNS) {
-    if (pattern.keywords.some((keyword) => normalized.includes(keyword))) {
-      return pattern.serviceType;
+    const matchCount = pattern.keywords.filter((keyword) =>
+      normalized.includes(keyword)
+    ).length;
+    if (matchCount === 0) continue;
+
+    const score =
+      matchCount * 10 + (SERVICE_PRIORITY[pattern.serviceType] ?? 1);
+    if (score > bestScore) {
+      bestScore = score;
+      bestServiceType = pattern.serviceType;
     }
   }
 
-  return "";
+  return bestServiceType;
 }
 
 function isVenueLikeRequest(message: string): boolean {
@@ -500,8 +546,16 @@ function isVenueLikeRequest(message: string): boolean {
     "bar",
     "rooftop",
     "restaurant",
+    "resto",
     "reservation",
     "dinner",
+    "lunch",
+    "brunch",
+    "cafe",
+    "bistro",
+    "food",
+    "cuisine",
+    "book a table",
     "wedding",
     "celebration",
     "offsite",
