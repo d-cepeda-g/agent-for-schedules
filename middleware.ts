@@ -50,6 +50,7 @@ export function middleware(request: NextRequest) {
   const expectedPass = process.env.BASIC_AUTH_PASSWORD;
 
   if (!expectedUser || !expectedPass) {
+    console.warn("[auth] ENABLE_BASIC_AUTH is true but BASIC_AUTH_USERNAME or BASIC_AUTH_PASSWORD is missing — auth bypassed");
     return NextResponse.next();
   }
 

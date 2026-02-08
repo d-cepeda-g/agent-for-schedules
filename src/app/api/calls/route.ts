@@ -9,51 +9,56 @@ import {
 } from "@/lib/validation";
 
 export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-  const status = searchParams.get("status");
-  const customerId = searchParams.get("customerId");
-  const batchId = searchParams.get("batchId");
-  const from = searchParams.get("from");
-  const to = searchParams.get("to");
+  try {
+    const searchParams = request.nextUrl.searchParams;
+    const status = searchParams.get("status");
+    const customerId = searchParams.get("customerId");
+    const batchId = searchParams.get("batchId");
+    const from = searchParams.get("from");
+    const to = searchParams.get("to");
 
-  const where: Record<string, unknown> = {};
-  if (status) {
-    if (!isCallStatus(status)) {
-      return NextResponse.json({ error: "Invalid status filter" }, { status: 400 });
+    const where: Record<string, unknown> = {};
+    if (status) {
+      if (!isCallStatus(status)) {
+        return NextResponse.json({ error: "Invalid status filter" }, { status: 400 });
+      }
+      where.status = status;
     }
-    where.status = status;
+
+    if (customerId) where.customerId = customerId;
+    if (batchId) where.batchId = batchId;
+
+    if (from || to) {
+      const fromDate = from ? parseDateInput(from) : null;
+      const toDate = to ? parseDateInput(to) : null;
+
+      if (from && !fromDate) {
+        return NextResponse.json({ error: "Invalid from date" }, { status: 400 });
+      }
+      if (to && !toDate) {
+        return NextResponse.json({ error: "Invalid to date" }, { status: 400 });
+      }
+
+      where.scheduledAt = {
+        ...(fromDate && { gte: fromDate }),
+        ...(toDate && { lte: toDate }),
+      };
+    }
+
+    const calls = await db.scheduledCall.findMany({
+      where,
+      orderBy: { scheduledAt: "desc" },
+      include: {
+        customer: { select: { id: true, name: true, phone: true } },
+        evaluation: { select: { id: true, result: true } },
+      },
+    });
+
+    return NextResponse.json(calls);
+  } catch (error) {
+    console.error("[calls:GET]", error);
+    return NextResponse.json({ error: "Failed to fetch calls" }, { status: 500 });
   }
-
-  if (customerId) where.customerId = customerId;
-  if (batchId) where.batchId = batchId;
-
-  if (from || to) {
-    const fromDate = from ? parseDateInput(from) : null;
-    const toDate = to ? parseDateInput(to) : null;
-
-    if (from && !fromDate) {
-      return NextResponse.json({ error: "Invalid from date" }, { status: 400 });
-    }
-    if (to && !toDate) {
-      return NextResponse.json({ error: "Invalid to date" }, { status: 400 });
-    }
-
-    where.scheduledAt = {
-      ...(fromDate && { gte: fromDate }),
-      ...(toDate && { lte: toDate }),
-    };
-  }
-
-  const calls = await db.scheduledCall.findMany({
-    where,
-    orderBy: { scheduledAt: "desc" },
-    include: {
-      customer: { select: { id: true, name: true, phone: true } },
-      evaluation: { select: { id: true, result: true } },
-    },
-  });
-
-  return NextResponse.json(calls);
 }
 
 export async function POST(request: NextRequest) {
@@ -76,6 +81,14 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const agentId = process.env.ELEVENLABS_AGENT_ID;
+  if (!agentId) {
+    return NextResponse.json(
+      { error: "ELEVENLABS_AGENT_ID is not configured" },
+      { status: 500 }
+    );
+  }
+
   const customer = await db.customer.findUnique({ where: { id: customerId } });
   if (!customer) {
     return NextResponse.json({ error: "Customer not found" }, { status: 404 });
@@ -92,7 +105,7 @@ export async function POST(request: NextRequest) {
         preferredLanguageFromBody && preferredLanguageFromBody.length > 0
           ? preferredLanguageFromBody
           : customer.preferredLanguage || "English",
-      agentId: process.env.ELEVENLABS_AGENT_ID || "",
+      agentId,
     },
     include: {
       customer: { select: { id: true, name: true, phone: true } },

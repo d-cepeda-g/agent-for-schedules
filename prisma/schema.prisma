@@ -39,6 +39,12 @@ model ScheduledCall {
   evaluation  CallEvaluation?
   actionItems CallActionItem[]
   logs        CallLog[]
+
+  @@index([customerId])
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([batchId])
+  @@index([conversationId])
 }
 
 model CallEvaluation {

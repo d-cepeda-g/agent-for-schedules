@@ -7,6 +7,14 @@ import { normalizeOptionalString } from "@/lib/validation";
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+    const agentId = process.env.ELEVENLABS_AGENT_ID;
+    if (!agentId) {
+      return NextResponse.json(
+        { error: "ELEVENLABS_AGENT_ID is not configured" },
+        { status: 500 }
+      );
+    }
+
     const callReason =
       normalizeOptionalString(body?.callReason) ||
       "Reminder for clinic appointment at Kaulbachstraße on July 25";
@@ -17,12 +25,12 @@ export async function POST(request: NextRequest) {
       normalizeOptionalString(body?.notes) ||
       "Please remind David Cepeda to book his appointment at the Kaulbachstraße clinic for July 25 and confirm if that time works for him.";
 
-    const customer = await db.customer.findFirst({
-      where: {
-        name: { contains: "David Cepeda", mode: "insensitive" },
-      },
+    const allCustomers = await db.customer.findMany({
+      where: { name: { contains: "David Cepeda" } },
       orderBy: { createdAt: "desc" },
+      take: 1,
     });
+    const customer = allCustomers[0] ?? null;
 
     if (!customer) {
       return NextResponse.json(
@@ -45,7 +53,7 @@ export async function POST(request: NextRequest) {
           normalizeOptionalString(body?.preferredLanguage) ||
           customer.preferredLanguage ||
           "English",
-        agentId: process.env.ELEVENLABS_AGENT_ID || "",
+        agentId,
       },
     });
 

@@ -1,199 +1,115 @@
-# Agent For Schedules
+# Lumi — AI Agent for Schedules
 
-A Next.js + Prisma app to:
+A Next.js + Prisma app that manages outbound AI phone calls through ElevenLabs. Lumi researches venues, schedules reservation calls, dispatches them via voice AI, and captures transcript results — all from a single dashboard.
 
-- Manage customers
-- Schedule outbound AI calls
-- Dispatch calls through ElevenLabs
-- Store transcript + evaluation results
-- Automatically capture transcript-derived items into the system
+## What it does
 
-## 1. Local Setup
+- **Dashboard** with AI Ops Copilot — proactive action suggestions, Valentine restaurant scheduling, company on-site venue search
+- **AI Chat Assistant** — researches venues/businesses via OpenAI web search, finds phone numbers, and suggests calls
+- **Call Scheduling** — create, dispatch, and track outbound calls through ElevenLabs voice AI
+- **Calendar View** — visual monthly calendar with per-day call details and delete support
+- **Swarm Mode** — launch up to 15 concurrent provider outreach calls with ranked results
+- **Webhook Integration** — automatic transcript capture, evaluation, and action item extraction from ElevenLabs
+- **Customer Management** — track contacts, call history, and preferred languages
+
+## Setup
 
 ```bash
 npm install
+npx prisma generate
 npm run db:migrate
 npm run dev
 ```
 
 Open `http://localhost:3000`.
 
-## 2. Environment Variables
+## Environment Variables
 
 Set these in `.env`:
 
 ```bash
 DATABASE_URL=postgresql://...
 
+# ElevenLabs (required for voice calls)
 ELEVENLABS_API_KEY=...
 ELEVENLABS_AGENT_ID=...
 ELEVENLABS_PHONE_NUMBER_ID=...
 ELEVENLABS_WEBHOOK_SECRET=...
-TOOL_API_KEY=...
+
+# OpenAI (required for AI features)
 OPENAI_API_KEY=...
 OPENAI_MODEL=gpt-4.1-mini
+
+# Tool authentication
+TOOL_API_KEY=...
+
+# Optional
 CALLPILOT_DISPATCH_CONCURRENCY=15
+ENABLE_BASIC_AUTH=true
+BASIC_AUTH_USERNAME=...
+BASIC_AUTH_PASSWORD=...
 ```
 
-`ELEVENLABS_WEBHOOK_SECRET` is required for validating incoming webhook signatures.
-`TOOL_API_KEY` is required for Agentic Function tool endpoint authentication.
-`OPENAI_API_KEY` (or `OPENAI_KEY`) enables proactive AI summaries and action suggestions on the main dashboard.
-`CALLPILOT_DISPATCH_CONCURRENCY` controls due-call dispatch parallelism (default 15, max 15).
+- `ELEVENLABS_WEBHOOK_SECRET` — validates incoming webhook signatures
+- `TOOL_API_KEY` — authenticates agentic function tool endpoints
+- `OPENAI_API_KEY` (or `OPENAI_KEY`) — enables AI chat assistant, dashboard insights, and venue research
+- `CALLPILOT_DISPATCH_CONCURRENCY` — controls due-call dispatch parallelism (default 15, max 15)
 
-## 3. Agentic Function Tool Endpoints (MVP)
+## Agentic Function Tool Endpoints
 
-All tool routes require one of these headers:
+All tool routes require `x-tool-api-key` or `Authorization: Bearer` header.
 
-- `x-tool-api-key: <TOOL_API_KEY>`
-- `Authorization: Bearer <TOOL_API_KEY>`
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/tools/provider-lookup` | Search providers by service type, location, rating |
+| `POST /api/tools/calendar-check` | Check calendar availability for proposed time slots |
+| `POST /api/tools/distance-score` | Score providers by distance from origin |
+| `POST /api/tools/slot-confirm` | Confirm a time slot with a specific provider |
 
-Available endpoints:
+## Swarm Mode (Concurrent Calls)
 
-1. `POST /api/tools/provider-lookup`
-   - Input: `service_type`, `location`, `min_rating`, `max_results`, optional `origin`, optional `travel_mode`
-2. `POST /api/tools/calendar-check`
-   - Input: `proposed_start`, optional `duration_minutes`, optional `busy_windows`, optional `customer_id`
-3. `POST /api/tools/distance-score`
-   - Input: `origin`, `provider_ids` or `providers`, optional `travel_mode`, optional `distance_weight`
-4. `POST /api/tools/slot-confirm`
-   - Input: `provider_id` (or `provider_name` + `provider_phone`), `slot_start`, optional `duration_minutes`, optional `busy_windows`
-
-Example:
+Dispatch due calls in parallel:
 
 ```bash
-curl -X POST http://localhost:3000/api/tools/provider-lookup \
-  -H "Content-Type: application/json" \
-  -H "x-tool-api-key: $TOOL_API_KEY" \
-  -d '{
-    "service_type": "dentist",
-    "location": "San Francisco",
-    "max_results": 3
-  }'
+POST /api/calls/dispatch-due?limit=15&concurrency=15
 ```
 
-## 3.1 Multi-Call Swarm Mode (15 Concurrent Calls)
-
-### Dispatch due calls in parallel
-
-`POST /api/calls/dispatch-due?limit=15&concurrency=15`
-
-- `limit` controls how many pending due calls are scanned.
-- `concurrency` controls how many calls are dispatched in parallel.
-- If `concurrency` is omitted, the API uses `CALLPILOT_DISPATCH_CONCURRENCY`.
-
-### Launch provider outreach campaign
-
-`POST /api/calls/swarm`
-
-Example:
+Launch a provider outreach campaign:
 
 ```bash
-curl -X POST http://localhost:3000/api/calls/swarm \
-  -H "Content-Type: application/json" \
-  -d '{
-    "service_type": "dentist",
-    "location": "San Francisco",
-    "min_rating": 4.2,
-    "max_providers": 15,
-    "dispatch_now": true,
-    "concurrency": 15,
-    "notes": "Need the earliest available cleaning this week"
-  }'
+POST /api/calls/swarm
+{
+  "service_type": "dentist",
+  "location": "San Francisco",
+  "min_rating": 4.2,
+  "max_providers": 15,
+  "dispatch_now": true,
+  "concurrency": 15
+}
 ```
 
-This endpoint:
+Get ranked campaign results: `GET /api/calls/swarm/:batchId`
 
-- Selects up to 15 matching providers from the provider directory
-- Creates one scheduled call per provider with a shared `campaign_id` (`batchId` in DB)
-- Dispatches calls in parallel with configurable concurrency (capped at 15)
-- Returns a ranked pre-call shortlist using rating + distance heuristics
+## ElevenLabs Webhook Setup
 
-### Get ranked campaign results
+1. Configure your ElevenLabs conversational agent
+2. Set webhook URL to `https://<your-domain>/api/elevenlabs/webhook`
+3. Enable `post_call_transcription` and `post_call_analysis` events
+4. Copy the webhook secret into `ELEVENLABS_WEBHOOK_SECRET`
+5. Configure Data Collection fields: `follow_up_task`, `follow_up_date`, `customer_priority`, `next_step_owner`
 
-`GET /api/calls/swarm/:batchId`
+## Call Context
 
-Optional query parameters:
+When dispatching, these dynamic variables are sent to ElevenLabs:
 
-- `top` (default 5, max 15)
-- `origin_lat`, `origin_lng`
-- `availability_weight`, `rating_weight`, `distance_weight`
+- `customer_name`, `call_reason`, `call_purpose`
+- `preferred_language`, `additional_context`, `call_context`
 
-The response includes `top_shortlist` plus `ranked_calls` with:
+Reference them in your ElevenLabs agent prompt.
 
-- earliest extracted availability from transcripts/action items
-- rating and distance scoring
-- weighted final score
+## Security
 
-## 4. ElevenLabs Configuration (Required for Auto Transcript Items)
-
-1. Create/configure your ElevenLabs conversational agent.
-2. In that agent, configure **Data Collection** fields for the items you want saved (examples below).
-3. Configure webhook delivery in ElevenLabs to point to:
-   - `https://<your-domain>/api/elevenlabs/webhook`
-4. Enable post-call events (`post_call_transcription` and/or `post_call_analysis`).
-5. Copy the webhook secret from ElevenLabs into `ELEVENLABS_WEBHOOK_SECRET`.
-
-Suggested Data Collection fields:
-
-- `follow_up_task`
-- `follow_up_date`
-- `customer_priority`
-- `next_step_owner`
-
-Each non-empty collected value is stored as a `CallActionItem` for that call.
-
-## 5. Scheduled Context For Agent
-
-When creating a scheduled call, the app stores:
-
-- `callReason`
-- `callPurpose`
-- `preferredLanguage`
-- `notes`
-
-If `preferredLanguage` is omitted while creating a call, the app now defaults to the selected customer's `preferredLanguage`.
-
-On dispatch, these are sent to ElevenLabs as dynamic variables:
-
-- `customer_name`
-- `call_reason`
-- `call_purpose`
-- `preferred_language`
-- `additional_context`
-- `call_context`
-
-To make the agent use them, reference these variables in your ElevenLabs prompt.
-
-## 6. How Transcript Items Flow Through This App
-
-1. App dispatches call via ElevenLabs.
-2. ElevenLabs sends webhook to `/api/elevenlabs/webhook`.
-3. App verifies webhook signature.
-4. App fetches conversation details from ElevenLabs.
-5. App updates:
-   - `CallEvaluation` (result, rationale, transcript, duration)
-   - `ScheduledCall` status (`completed`/`failed`/`dispatched`)
-   - `CallActionItem` records from `analysis.data_collection_results`
-6. In the call detail page (`/calls/:id`), items appear in **Transcript Items**.
-
-## 7. Security Notes
-
-- In production this app uses basic auth middleware, but `/api/elevenlabs/webhook` is intentionally excluded so ElevenLabs can post events.
-- `/api/tools/*` endpoints are excluded from basic auth and protected with `TOOL_API_KEY`.
-- Webhook authenticity is checked with `ELEVENLABS_WEBHOOK_SECRET`.
-- Keep `.env` out of version control and rotate any exposed API keys.
-
-## 8. Manual Fallback
-
-If a webhook is delayed or missed, you can still fetch results manually from the UI using **Fetch Evaluation** on a call. The same sync logic is used in both paths.
-
-## 9. Dashboard AI Copilot
-
-The dashboard now calls `GET /api/ai/dashboard-insights` to render:
-
-- AI summary across calls/evaluations/action items
-- Important items needing follow-up
-- Proactive action buttons that create scheduled calls with prefilled reason/purpose/notes
-- A Valentine section with 3 restaurant options and one-click reservation call scheduling
-
-When no OpenAI key is configured or the model fails, the endpoint returns deterministic fallback insights.
+- Basic auth middleware protects all routes in production
+- `/api/elevenlabs/webhook` is excluded (ElevenLabs needs access)
+- `/api/tools/*` endpoints use `TOOL_API_KEY` instead
+- Webhook authenticity is verified via `ELEVENLABS_WEBHOOK_SECRET`

@@ -281,7 +281,7 @@ export async function POST(request: NextRequest) {
         customerId,
         scheduledAt,
         status: "pending",
-        agentId: process.env.ELEVENLABS_AGENT_ID || "",
+        agentId: process.env.ELEVENLABS_AGENT_ID!,
         batchId: campaignId,
         callReason,
         callPurpose,

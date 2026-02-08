@@ -164,7 +164,12 @@ export default function CalendarViewPage() {
       const res = await fetch(`/api/calls/${callId}`, { method: "DELETE" });
       if (res.ok) {
         setRefreshKey((k) => k + 1);
+      } else {
+        const data = (await res.json().catch(() => null)) as { error?: string } | null;
+        alert(data?.error || "Failed to delete call");
       }
+    } catch {
+      alert("Network error — could not delete call");
     } finally {
       setDeletingCallId(null);
     }
