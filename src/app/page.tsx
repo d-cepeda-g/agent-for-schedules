@@ -1362,15 +1362,19 @@ export default function DashboardPage() {
           variant="outline"
           onClick={async () => {
             try {
-              const res = await fetch("/api/calls/quick-david", { method: "POST" });
+              const res = await fetch("/api/calls/quick-david", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({}),
+              });
               if (!res.ok) {
-                const data = (await res.json().catch(() => null)) as { error?: string } | null;
-                alert(data?.error || "Failed to schedule call");
+                const err = (await res.json().catch(() => null)) as { error?: string } | null;
+                alert(err?.error || "Failed to schedule call");
                 return;
               }
-              const data = (await res.json()) as { id?: string };
-              if (data?.id) {
-                router.push(`/calls/${data.id}`);
+              const data = (await res.json()) as { call?: { id?: string } };
+              if (data?.call?.id) {
+                router.push(`/calls/${data.call.id}`);
               }
             } catch {
               alert("Failed to schedule call");
