@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
@@ -113,7 +114,13 @@ export function Sidebar() {
             collapsed ? "w-8 justify-center" : "min-w-0"
           )}
         >
-          <Phone className="h-5 w-5 text-primary" />
+          <Image
+            src="/lumi-logo.svg"
+            alt="Lumi logo"
+            width={20}
+            height={20}
+            className="h-5 w-5 object-contain"
+          />
           {collapsed ? (
             <span className="sr-only">Lumi</span>
           ) : (
@@ -155,7 +162,13 @@ export function MobileNav() {
         </SheetTrigger>
         <SheetContent side="left" className="w-64 border-sidebar-border bg-sidebar p-4">
           <div className="mb-6 flex items-center gap-2 px-3">
-            <Phone className="h-5 w-5 text-primary" />
+            <Image
+              src="/lumi-logo.svg"
+              alt="Lumi logo"
+              width={20}
+              height={20}
+              className="h-5 w-5 object-contain"
+            />
             <span className="text-lg font-semibold">Lumi</span>
           </div>
           <NavLinks onClick={() => setOpen(false)} />

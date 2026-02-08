@@ -153,7 +153,7 @@ export default function CustomerHistoryPage() {
   if (loading) {
     return (
       <div className="py-12 text-center text-muted-foreground">
-        Loading customer history...
+        Loading contact history...
       </div>
     );
   }
@@ -163,9 +163,9 @@ export default function CustomerHistoryPage() {
       <div className="space-y-4">
         <Button variant="ghost" onClick={() => router.push("/customers")}>
           <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Customers
+          Back to Contacts
         </Button>
-        <p className="text-muted-foreground">{error || "Customer not found"}</p>
+        <p className="text-muted-foreground">{error || "Contact not found"}</p>
       </div>
     );
   }
@@ -184,7 +184,7 @@ export default function CustomerHistoryPage() {
       <div className="flex items-center justify-between gap-3">
         <Button variant="ghost" onClick={() => router.push("/customers")}>
           <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Customers
+          Back to Contacts
         </Button>
         <Button
           variant="destructive"
@@ -214,7 +214,7 @@ export default function CustomerHistoryPage() {
         {customer.calls.length === 0 ? (
           <Card>
             <CardContent className="py-6 text-sm text-muted-foreground">
-              No calls yet for this customer.
+              No calls yet for this contact.
             </CardContent>
           </Card>
         ) : (

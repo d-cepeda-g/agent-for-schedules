@@ -30,6 +30,9 @@ type Call = {
   scheduledAt: string;
   status: string;
   notes: string;
+  callReason: string;
+  callPurpose: string;
+  preferredLanguage: string;
   customer: { id: string; name: string; phone: string };
   evaluation: { id: string; result: string } | null;
 };
@@ -321,11 +324,33 @@ function toPrefillUrl(action: ProactiveAction): string {
   return `/schedule?${params.toString()}`;
 }
 
+function hasPreviousCallHistory(calls: Call[]): boolean {
+  const completedStatuses = new Set(["completed", "failed"]);
+  return calls.some(
+    (call) => completedStatuses.has(call.status) || Boolean(call.evaluation)
+  );
+}
+
+function isFollowUpAction(action: ProactiveAction): boolean {
+  const searchable = [
+    action.id,
+    action.title,
+    action.description,
+    action.call_reason,
+    action.call_purpose,
+    action.notes,
+  ]
+    .join(" ")
+    .toLowerCase();
+  return searchable.includes("follow up") || searchable.includes("follow-up");
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const onsiteSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [upcomingCalls, setUpcomingCalls] = useState<Call[]>([]);
   const [recentEvals, setRecentEvals] = useState<Evaluation[]>([]);
+  const [hasPriorCalls, setHasPriorCalls] = useState(false);
   const [insights, setInsights] = useState<DashboardInsights | null>(null);
   const [insightsLoading, setInsightsLoading] = useState(true);
   const [actionCreatingId, setActionCreatingId] = useState<string | null>(null);
@@ -347,6 +372,7 @@ export default function DashboardPage() {
       .then((calls: Call[]) => {
         const pending = calls.filter((c) => c.status === "pending");
         const completed = calls.filter((c) => c.status === "completed");
+        const hasHistory = hasPreviousCallHistory(calls);
 
         setUpcomingCalls(
           pending
@@ -363,10 +389,12 @@ export default function DashboardPage() {
           pending: pending.length,
           completed: completed.length,
         });
+        setHasPriorCalls(hasHistory);
       })
       .catch(() => {
         setUpcomingCalls([]);
         setStats({ totalCalls: 0, pending: 0, completed: 0 });
+        setHasPriorCalls(false);
       });
 
     fetch("/api/evaluations")
@@ -423,13 +451,17 @@ export default function DashboardPage() {
     [onsiteInquiryDate]
   );
 
-  const sortedActions = useMemo(
-    () =>
-      insights?.proactive_actions
-        ?.filter((action) => !dismissedActionIdSet.has(action.id))
-        .slice(0, 6) || [],
-    [insights, dismissedActionIdSet]
-  );
+  const sortedActions = useMemo(() => {
+    const visible = insights?.proactive_actions?.filter(
+      (action) => !dismissedActionIdSet.has(action.id)
+    ) || [];
+
+    const historyAware = hasPriorCalls
+      ? visible
+      : visible.filter((action) => !isFollowUpAction(action));
+
+    return historyAware.slice(0, 6);
+  }, [insights, dismissedActionIdSet, hasPriorCalls]);
 
   const proactiveActionsWithOnsite = useMemo(() => {
     const actions = sortedActions.filter(
@@ -495,6 +527,12 @@ export default function DashboardPage() {
       ),
     [onsiteLocations, dismissedActionIdSet]
   );
+
+  const aiOpsSummary = useMemo(() => {
+    if (!insights) return "";
+    if (hasPriorCalls) return insights.summary;
+    return "No previous calls have been made yet. Once your first call is completed, AI Ops will summarize outcomes here. Proactive updates below are still available.";
+  }, [insights, hasPriorCalls]);
 
   async function scheduleProactiveAction(
     action: ProactiveAction,
@@ -771,8 +809,8 @@ export default function DashboardPage() {
             </p>
           ) : (
             <>
-              <p className="text-sm">{insights.summary}</p>
-              {insights.source === "fallback" && insights.source_reason ? (
+              <p className="text-sm">{aiOpsSummary}</p>
+              {hasPriorCalls && insights.source === "fallback" && insights.source_reason ? (
                 <p className="text-xs text-amber-700">{insights.source_reason}</p>
               ) : null}
 
@@ -1038,15 +1076,28 @@ export default function DashboardPage() {
                     key={call.id}
                     className="flex items-center justify-between rounded-lg border p-3"
                   >
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-sm font-medium">{call.customer.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {format(new Date(call.scheduledAt), "MMM d, h:mm a")}
+                        {format(new Date(call.scheduledAt), "MMM d, h:mm a")} ·{" "}
+                        {call.customer.phone}
                       </p>
+                      {(call.callReason || call.callPurpose || call.notes) && (
+                        <p className="line-clamp-1 text-xs text-muted-foreground">
+                          {call.callReason || call.callPurpose || call.notes}
+                        </p>
+                      )}
                     </div>
-                    <Badge variant={statusColor[call.status] || "outline"}>
-                      {call.status}
-                    </Badge>
+                    <div className="ml-3 flex shrink-0 flex-col items-end gap-1">
+                      <Badge variant={statusColor[call.status] || "outline"}>
+                        {call.status}
+                      </Badge>
+                      {call.preferredLanguage ? (
+                        <Badge variant="secondary" className="text-[10px]">
+                          {call.preferredLanguage}
+                        </Badge>
+                      ) : null}
+                    </div>
                   </div>
                 ))}
               </div>

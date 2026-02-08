@@ -374,6 +374,7 @@ function buildFallbackInsights(calls: Array<{
   id: string;
   status: string;
   callReason: string;
+  evaluation: { result: string; createdAt: Date } | null;
   customer: CustomerLite;
   actionItems: Array<{ completed: boolean; title: string; detail: string }>;
 }>, customers: CustomerLite[], reason: string): DashboardInsights {
@@ -389,7 +390,18 @@ function buildFallbackInsights(calls: Array<{
       .map((item) => `${call.customer.name}: ${item.title} - ${item.detail}`)
   );
 
-  const mostRecent = calls[0];
+  const hasCallOutcome = (call: {
+    status: string;
+    evaluation: { result: string; createdAt: Date } | null;
+  }): boolean => {
+    return (
+      call.status === "completed" ||
+      call.status === "failed" ||
+      Boolean(call.evaluation)
+    );
+  };
+
+  const mostRecent = calls.find((call) => hasCallOutcome(call));
   const targetCustomer = mostRecent?.customer || null;
 
   const proactiveActions: ProactiveAction[] = [];

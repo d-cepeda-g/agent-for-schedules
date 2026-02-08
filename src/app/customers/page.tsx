@@ -133,7 +133,7 @@ export default function CustomersPage() {
       const data = (await response.json().catch(() => null)) as
         | { error?: string }
         | null;
-      alert(data?.error || "Failed to save customer");
+      alert(data?.error || "Failed to save contact");
       return;
     }
 
@@ -156,7 +156,7 @@ export default function CustomersPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this customer? This will also remove their calls."))
+    if (!confirm("Delete this contact? This will also remove their calls."))
       return;
     setDeletingId(id);
     try {
@@ -165,7 +165,7 @@ export default function CustomersPage() {
         const data = (await response.json().catch(() => null)) as
           | { error?: string }
           | null;
-        alert(data?.error || "Failed to delete customer");
+        alert(data?.error || "Failed to delete contact");
         return;
       }
       refreshCustomers();
@@ -178,9 +178,9 @@ export default function CustomersPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Customers</h1>
+          <h1 className="text-2xl font-bold">Contacts</h1>
           <p className="text-muted-foreground">
-            Manage your customer contacts
+            Manage your contacts
           </p>
         </div>
         <Dialog
@@ -196,13 +196,13 @@ export default function CustomersPage() {
           <DialogTrigger asChild>
             <Button>
               <Plus className="mr-2 h-4 w-4" />
-              Add Customer
+              Add Contact
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>
-                {editingId ? "Edit Customer" : "New Customer"}
+                {editingId ? "Edit Contact" : "New Contact"}
               </DialogTitle>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -284,7 +284,7 @@ export default function CustomersPage() {
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Search customers..."
+              placeholder="Search contacts..."
               value={search}
               onChange={(e) => {
                 setLoading(true);
@@ -301,7 +301,7 @@ export default function CustomersPage() {
             </p>
           ) : customers.length === 0 ? (
             <p className="py-8 text-center text-muted-foreground">
-              No customers yet. Add your first one above.
+              No contacts yet. Add your first one above.
             </p>
           ) : (
             <Table>
