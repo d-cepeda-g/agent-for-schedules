@@ -232,6 +232,7 @@ type OnlineWebsiteLead = {
 type OnlineResearchDiagnostics = {
   parsedEntries: number;
   acceptedCallable: number;
+  missingAddress: number;
   missingName: number;
   missingPhone: number;
   invalidPhone: number;
@@ -839,6 +840,7 @@ function createEmptyDiagnostics(): OnlineResearchDiagnostics {
   return {
     parsedEntries: 0,
     acceptedCallable: 0,
+    missingAddress: 0,
     missingName: 0,
     missingPhone: 0,
     invalidPhone: 0,
@@ -945,9 +947,10 @@ function buildOnlineResearchPrompt(
 
   const systemPrompt = [
     "You are Lumi, researching real businesses on the public web.",
-    "Use web search to find currently operating businesses that match the request.",
-    "Prefer businesses with a publicly listed callable phone number.",
-    "If a phone number is unavailable, still include the place when a website is available.",
+    "Use web search deeply to find currently operating businesses that match the request.",
+    "Focus on venues and bars/restaurants where applicable.",
+    "Every primary result must include BOTH a full address and a callable phone number.",
+    "If a result is missing phone or address, keep searching for better matches.",
     preferPlaces
       ? "Return venues/business places only (bars, clubs, restaurants, event spaces). Do not return individual personal contacts."
       : "Prefer venues/business places when the request mentions location, reservation, bars, restaurants, or events.",
@@ -964,7 +967,39 @@ function buildOnlineResearchPrompt(
     `Target location: ${inferredLocation}`,
     `Place-first mode: ${preferPlaces ? "yes" : "no"}`,
     `Use this location for venue search unless the user explicitly requests a different city: ${inferredLocation}.`,
+    "Required fields for each place: name, full address, city, callable phone number, and reason.",
     "Find strong matches where the phone number is available for immediate outreach.",
+  ].join("\n");
+
+  return { systemPrompt, userPrompt };
+}
+
+function buildDeepVenueResearchPrompt(
+  message: string,
+  serviceType: string,
+  location: string
+): { systemPrompt: string; userPrompt: string } {
+  const inferredService = serviceType || "bars, restaurants, or event venues";
+  const inferredLocation = location || "Munich";
+
+  const systemPrompt = [
+    "You are a venue researcher.",
+    "Use web search deeply and run multiple query variants before answering.",
+    "Primary goal: return real venues with BOTH full address and callable phone number.",
+    "Focus on bars, clubs, restaurants, and event venues in the target city.",
+    "Do not return people/personal contacts.",
+    "If an item is missing phone or address, skip it unless no better data exists.",
+    "Do not fabricate names, addresses, phones, or websites.",
+    `Return at most ${MAX_ONLINE_RESEARCH_RESULTS} places.`,
+  ].join("\n");
+
+  const userPrompt = [
+    `Original request: ${message}`,
+    `Service intent: ${inferredService}`,
+    `Target location: ${inferredLocation}`,
+    'Use this proven query style as reference: "Give me latino bar to go partying at night in Munich with contact numbers".',
+    "Adapt that query style to the actual request/location and run several search variants.",
+    "Required per place: name, full address, city, callable phone number, short reason, website if available.",
   ].join("\n");
 
   return { systemPrompt, userPrompt };
@@ -987,7 +1022,9 @@ function buildWebResearchNormalizationPrompt(input: {
     "You normalize web research notes into strict JSON.",
     "Use only places that are explicitly present in the source text.",
     "Never invent businesses, phones, websites, addresses, or cities.",
-    "Include phone when available; if unavailable, set phone to an empty string.",
+    "Prioritize places that include BOTH full address and callable phone number.",
+    "If phone is unavailable, set phone to an empty string.",
+    "If address is unavailable, set address to an empty string.",
     input.preferPlaces
       ? "Only include venue-like businesses (bars, restaurants, clubs, event spaces). Exclude people and non-venue services."
       : "Prefer venue-like businesses when possible.",
@@ -1020,33 +1057,57 @@ function buildWebResearchNormalizationPrompt(input: {
   return { systemPrompt, userPrompt };
 }
 
-async function researchPlacesOnline(input: {
+function mergeUniqueStrings(values: string[][]): string[] {
+  const merged: string[] = [];
+  for (const list of values) {
+    for (const value of list) {
+      if (!value || merged.includes(value)) continue;
+      merged.push(value);
+    }
+  }
+
+  return merged;
+}
+
+function mergeDiagnostics(
+  left: OnlineResearchDiagnostics,
+  right: OnlineResearchDiagnostics
+): OnlineResearchDiagnostics {
+  return {
+    parsedEntries: left.parsedEntries + right.parsedEntries,
+    acceptedCallable: left.acceptedCallable + right.acceptedCallable,
+    missingAddress: left.missingAddress + right.missingAddress,
+    missingName: left.missingName + right.missingName,
+    missingPhone: left.missingPhone + right.missingPhone,
+    invalidPhone: left.invalidPhone + right.invalidPhone,
+    recoveredPhone: left.recoveredPhone + right.recoveredPhone,
+    websiteOnlyLeads: left.websiteOnlyLeads + right.websiteOnlyLeads,
+    duplicateWithContacts:
+      left.duplicateWithContacts + right.duplicateWithContacts,
+    locationFilteredOut: left.locationFilteredOut + right.locationFilteredOut,
+    finalSuggestions: left.finalSuggestions + right.finalSuggestions,
+    usedWebSearch: left.usedWebSearch || right.usedWebSearch,
+    sourceUrlCount: left.sourceUrlCount + right.sourceUrlCount,
+  };
+}
+
+function buildResearchGapNote(diagnostics: OnlineResearchDiagnostics): string {
+  return `Research diagnostics: parsed=${diagnostics.parsedEntries}, callable=${diagnostics.acceptedCallable}, missingAddress=${diagnostics.missingAddress}, missingPhone=${diagnostics.missingPhone}, invalidPhone=${diagnostics.invalidPhone}, duplicates=${diagnostics.duplicateWithContacts}.`;
+}
+
+async function runOnlineResearchAttempt(input: {
   message: string;
   serviceType: string;
   location: string;
   preferPlaces: boolean;
   context: SuggestionContext;
   existingPhones: Set<string>;
+  systemPrompt: string;
+  userPrompt: string;
 }): Promise<OnlineResearchResult> {
-  if (!hasOpenAiApiKey()) {
-    return {
-      suggestions: [],
-      websiteLead: null,
-      diagnostics: createEmptyDiagnostics(),
-      sourceUrls: [],
-    };
-  }
-
-  const { systemPrompt, userPrompt } = buildOnlineResearchPrompt(
-    input.message,
-    input.serviceType,
-    input.location,
-    input.preferPlaces
-  );
-
   const webSearchResult = await createWebSearchTextCompletionWithMetadata({
-    systemPrompt,
-    userPrompt,
+    systemPrompt: input.systemPrompt,
+    userPrompt: input.userPrompt,
     temperature: 0.1,
     maxTokens: 900,
     searchContextSize: "high",
@@ -1077,6 +1138,12 @@ async function researchPlacesOnline(input: {
 
   let places = normalized.callablePlaces;
   let websiteLeads = normalized.websiteLeads;
+  if (input.preferPlaces) {
+    const placesWithAddress = places.filter((place) => Boolean(place.address.trim()));
+    diagnostics.missingAddress += Math.max(0, places.length - placesWithAddress.length);
+    places = placesWithAddress;
+  }
+
   if (input.preferPlaces && input.location.trim()) {
     const locationNeedle = input.location.trim().toLowerCase();
     const matchingPlaces = places.filter((place) =>
@@ -1108,31 +1175,30 @@ async function researchPlacesOnline(input: {
     }
   }
 
-  const callablePlaces = places.filter(
-    (place) => !input.existingPhones.has(normalizePhone(place.phone))
-  ).slice(0, MAX_ONLINE_RESEARCH_RESULTS);
+  const callablePlaces = places
+    .filter((place) => !input.existingPhones.has(normalizePhone(place.phone)))
+    .slice(0, MAX_ONLINE_RESEARCH_RESULTS);
   diagnostics.duplicateWithContacts = Math.max(
     0,
     places.length - callablePlaces.length
   );
 
-  const suggestions = callablePlaces
-    .map((place) =>
-      buildAdHocSuggestion(
-        place.name,
-        place.phone,
-        input.context,
-        place.reason,
-        [
-          place.address ? `Address: ${place.address}` : "",
-          place.city ? `City: ${place.city}` : "",
-          place.website ? `Website: ${place.website}` : "",
-          "Source: live web research",
-        ]
-          .filter(Boolean)
-          .join("\n")
-      )
-    );
+  const suggestions = callablePlaces.map((place) =>
+    buildAdHocSuggestion(
+      place.name,
+      place.phone,
+      input.context,
+      place.reason,
+      [
+        place.address ? `Address: ${place.address}` : "",
+        place.city ? `City: ${place.city}` : "",
+        place.website ? `Website: ${place.website}` : "",
+        "Source: live web research",
+      ]
+        .filter(Boolean)
+        .join("\n")
+    )
+  );
 
   const rankedSuggestions = dedupeSuggestions(suggestions).slice(
     0,
@@ -1145,6 +1211,73 @@ async function researchPlacesOnline(input: {
     websiteLead: websiteLeads[0] || null,
     diagnostics,
     sourceUrls: webSearchResult.sourceUrls,
+  };
+}
+
+async function researchPlacesOnline(input: {
+  message: string;
+  serviceType: string;
+  location: string;
+  preferPlaces: boolean;
+  context: SuggestionContext;
+  existingPhones: Set<string>;
+}): Promise<OnlineResearchResult> {
+  if (!hasOpenAiApiKey()) {
+    return {
+      suggestions: [],
+      websiteLead: null,
+      diagnostics: createEmptyDiagnostics(),
+      sourceUrls: [],
+    };
+  }
+
+  const basePrompt = buildOnlineResearchPrompt(
+    input.message,
+    input.serviceType,
+    input.location,
+    input.preferPlaces
+  );
+  const firstAttempt = await runOnlineResearchAttempt({
+    ...input,
+    systemPrompt: basePrompt.systemPrompt,
+    userPrompt: basePrompt.userPrompt,
+  });
+
+  if (!input.preferPlaces || firstAttempt.suggestions.length >= 2) {
+    return firstAttempt;
+  }
+
+  const deepPrompt = buildDeepVenueResearchPrompt(
+    input.message,
+    input.serviceType,
+    input.location
+  );
+  const secondAttempt = await runOnlineResearchAttempt({
+    ...input,
+    systemPrompt: deepPrompt.systemPrompt,
+    userPrompt: deepPrompt.userPrompt,
+  });
+
+  const mergedSuggestions = dedupeSuggestions([
+    ...firstAttempt.suggestions,
+    ...secondAttempt.suggestions,
+  ]).slice(0, MAX_SUGGESTIONS);
+
+  return {
+    suggestions: mergedSuggestions,
+    websiteLead: firstAttempt.websiteLead || secondAttempt.websiteLead,
+    diagnostics: {
+      ...mergeDiagnostics(firstAttempt.diagnostics, secondAttempt.diagnostics),
+      finalSuggestions: mergedSuggestions.length,
+      sourceUrlCount: mergeUniqueStrings([
+        firstAttempt.sourceUrls,
+        secondAttempt.sourceUrls,
+      ]).length,
+    },
+    sourceUrls: mergeUniqueStrings([
+      firstAttempt.sourceUrls,
+      secondAttempt.sourceUrls,
+    ]),
   };
 }
 
@@ -1823,6 +1956,7 @@ export async function POST(request: Request) {
               .join(" ")
           : [
               "Live web place research returned no callable venues. Showing best available options.",
+              buildResearchGapNote(onlineResearchResult.diagnostics),
               websiteLeadNote,
               webSourceNote,
             ]
