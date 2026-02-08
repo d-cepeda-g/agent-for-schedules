@@ -17,6 +17,7 @@ const MAX_SUGGESTIONS = 3;
 const MAX_ONLINE_RESEARCH_RESULTS = 6;
 const MAX_WEB_RESEARCH_TEXT_CHARS = 12000;
 const MAX_WEB_SOURCE_URLS_IN_NOTE = 3;
+const MAX_PHONE_RECOVERY_LEADS = 4;
 const DEFAULT_LANGUAGE = "English";
 
 const STOP_WORDS = new Set([
@@ -247,7 +248,7 @@ type OnlineResearchDiagnostics = {
 
 type OnlineResearchResult = {
   suggestions: ChatSuggestion[];
-  websiteLead: OnlineWebsiteLead | null;
+  websiteLeads: OnlineWebsiteLead[];
   diagnostics: OnlineResearchDiagnostics;
   sourceUrls: string[];
 };
@@ -949,8 +950,11 @@ function buildOnlineResearchPrompt(
     "You are Lumi, researching real businesses on the public web.",
     "Use web search deeply to find currently operating businesses that match the request.",
     "Focus on venues and bars/restaurants where applicable.",
-    "Every primary result must include BOTH a full address and a callable phone number.",
-    "If a result is missing phone or address, keep searching for better matches.",
+    "CRITICAL: Every result MUST include a callable phone number. This is the highest priority.",
+    "Search specifically on Google Maps, Yelp, TripAdvisor, Yellow Pages, and official business pages to find phone numbers.",
+    "If an event-listing site (e.g. rausgegangen.de, eventbrite, evepla) does not show a phone, search the venue name + city + 'phone number' or 'Telefon' or 'contact' separately.",
+    "For German venues, look for 'Impressum' or 'Kontakt' pages which usually contain phone numbers.",
+    "If a result is missing phone, keep searching other sources until you find it.",
     preferPlaces
       ? "Return venues/business places only (bars, clubs, restaurants, event spaces). Do not return individual personal contacts."
       : "Prefer venues/business places when the request mentions location, reservation, bars, restaurants, or events.",
@@ -968,7 +972,9 @@ function buildOnlineResearchPrompt(
     `Place-first mode: ${preferPlaces ? "yes" : "no"}`,
     `Use this location for venue search unless the user explicitly requests a different city: ${inferredLocation}.`,
     "Required fields for each place: name, full address, city, callable phone number, and reason.",
-    "Find strong matches where the phone number is available for immediate outreach.",
+    "IMPORTANT: For EACH venue, do a separate search for its phone number if not immediately found.",
+    "Try queries like: '<venue name> <city> phone number', '<venue name> <city> Telefon kontakt', '<venue name> Google Maps'.",
+    "Only include venues where you successfully found a phone number.",
   ].join("\n");
 
   return { systemPrompt, userPrompt };
@@ -983,12 +989,16 @@ function buildDeepVenueResearchPrompt(
   const inferredLocation = location || "Munich";
 
   const systemPrompt = [
-    "You are a venue researcher.",
+    "You are a venue researcher specializing in finding business contact information.",
     "Use web search deeply and run multiple query variants before answering.",
     "Primary goal: return real venues with BOTH full address and callable phone number.",
+    "PHONE NUMBER STRATEGY:",
+    "1. Search Google Maps for the venue — it almost always has the phone number.",
+    "2. Search '<venue name> <city> phone' or '<venue name> <city> Telefon'.",
+    "3. Check the venue's own website, especially Impressum/Kontakt/Contact pages.",
+    "4. Try Yelp, TripAdvisor, or Yellow Pages (Gelbe Seiten for Germany).",
     "Focus on bars, clubs, restaurants, and event venues in the target city.",
     "Do not return people/personal contacts.",
-    "If an item is missing phone or address, skip it unless no better data exists.",
     "Do not fabricate names, addresses, phones, or websites.",
     `Return at most ${MAX_ONLINE_RESEARCH_RESULTS} places.`,
   ].join("\n");
@@ -997,9 +1007,12 @@ function buildDeepVenueResearchPrompt(
     `Original request: ${message}`,
     `Service intent: ${inferredService}`,
     `Target location: ${inferredLocation}`,
-    'Use this proven query style as reference: "Give me latino bar to go partying at night in Munich with contact numbers".',
-    "Adapt that query style to the actual request/location and run several search variants.",
+    `Search these query variants:`,
+    `1. "${inferredService} ${inferredLocation} phone number contact"`,
+    `2. "${inferredService} ${inferredLocation} Google Maps"`,
+    `3. "<specific venue name> ${inferredLocation} Telefon" for each venue found`,
     "Required per place: name, full address, city, callable phone number, short reason, website if available.",
+    "Only return venues where you found a real phone number.",
   ].join("\n");
 
   return { systemPrompt, userPrompt };
@@ -1022,8 +1035,13 @@ function buildWebResearchNormalizationPrompt(input: {
     "You normalize web research notes into strict JSON.",
     "Use only places that are explicitly present in the source text.",
     "Never invent businesses, phones, websites, addresses, or cities.",
-    "Prioritize places that include BOTH full address and callable phone number.",
-    "If phone is unavailable, set phone to an empty string.",
+    "PHONE EXTRACTION RULES:",
+    "- Extract phone numbers in ANY format: international (+49...), local (089...), with dashes, dots, spaces, or parentheses.",
+    "- Look for patterns like 'Tel:', 'Telefon:', 'Phone:', 'Fon:', 'Call:', followed by digits.",
+    "- German numbers may start with +49, 0049, or local area codes (089 for Munich, 030 for Berlin, etc.).",
+    "- If a number appears anywhere near a venue name in the text, associate it with that venue.",
+    "- Preserve the full phone number including country code when available.",
+    "If phone is truly not present anywhere in the text for a venue, set phone to an empty string.",
     "If address is unavailable, set address to an empty string.",
     input.preferPlaces
       ? "Only include venue-like businesses (bars, restaurants, clubs, event spaces). Exclude people and non-venue services."
@@ -1092,7 +1110,110 @@ function mergeDiagnostics(
 }
 
 function buildResearchGapNote(diagnostics: OnlineResearchDiagnostics): string {
-  return `Research diagnostics: parsed=${diagnostics.parsedEntries}, callable=${diagnostics.acceptedCallable}, missingAddress=${diagnostics.missingAddress}, missingPhone=${diagnostics.missingPhone}, invalidPhone=${diagnostics.invalidPhone}, duplicates=${diagnostics.duplicateWithContacts}.`;
+  const parts: string[] = [];
+
+  if (diagnostics.parsedEntries > 0 && diagnostics.acceptedCallable === 0) {
+    parts.push(
+      `Found ${diagnostics.parsedEntries} venue${diagnostics.parsedEntries > 1 ? "s" : ""} but none had a reachable phone number.`
+    );
+  } else if (diagnostics.parsedEntries > 0) {
+    parts.push(
+      `Found ${diagnostics.parsedEntries} venue${diagnostics.parsedEntries > 1 ? "s" : ""}, ${diagnostics.acceptedCallable} with phone numbers.`
+    );
+  }
+
+  if (diagnostics.recoveredPhone > 0) {
+    parts.push(`Recovered ${diagnostics.recoveredPhone} phone number${diagnostics.recoveredPhone > 1 ? "s" : ""} via targeted search.`);
+  }
+
+  return parts.join(" ") || "No venues found in web search.";
+}
+
+async function recoverPhonesForLeads(
+  leads: OnlineWebsiteLead[],
+  location: string
+): Promise<OnlinePlaceResearch[]> {
+  if (leads.length === 0) return [];
+
+  const venueList = leads
+    .map((lead, index) => `${index + 1}. ${lead.name} (${lead.website})`)
+    .join("\n");
+
+  const systemPrompt = [
+    "You are a phone number researcher. Your ONLY job is to find callable phone numbers for the listed venues.",
+    "Search Google Maps, Yelp, TripAdvisor, Yellow Pages, and each venue's own website (especially Impressum/Kontakt/Contact pages).",
+    "For German venues, try '<venue name> Telefon' or '<venue name> Impressum'.",
+    "Return strict JSON: { \"results\": [{ \"name\": string, \"phone\": string, \"address\": string }] }",
+    "phone must be a real callable number. If you truly cannot find a phone for a venue, omit that venue entirely.",
+    "Do not fabricate phone numbers.",
+  ].join("\n");
+
+  const userPrompt = [
+    `Find phone numbers for these venues in ${location || "the relevant city"}:`,
+    venueList,
+    "Search multiple sources per venue. Return only venues where you found a real phone number.",
+  ].join("\n");
+
+  try {
+    const result = await createWebSearchTextCompletionWithMetadata({
+      systemPrompt,
+      userPrompt,
+      temperature: 0,
+      maxTokens: 600,
+      searchContextSize: "high",
+      userLocation: toWebSearchUserLocation(location),
+      includeSources: false,
+    });
+
+    const jsonPayload = await createJsonCompletion({
+      systemPrompt: "Extract the JSON from the text. Return strict JSON: { \"results\": [{ \"name\": string, \"phone\": string, \"address\": string }] }. Never invent data.",
+      userPrompt: result.text,
+      temperature: 0,
+      maxTokens: 600,
+    });
+
+    const record = toRecord(jsonPayload);
+    if (!record) return [];
+
+    const entries = Array.isArray(record.results) ? record.results : [];
+    const recovered: OnlinePlaceResearch[] = [];
+
+    for (const entry of entries) {
+      const rec = toRecord(entry);
+      if (!rec) continue;
+      const name = normalizeText(rec.name);
+      const rawPhone = normalizeText(rec.phone);
+      if (!name || !rawPhone) continue;
+
+      let phone = rawPhone;
+      if (!isLikelyPhoneNumber(phone)) {
+        const normalized = toCallablePhoneNumber(phone);
+        if (!normalized || !isLikelyPhoneNumber(normalized)) continue;
+        phone = normalized;
+      }
+
+      const matchedLead = leads.find(
+        (lead) => lead.name.toLowerCase() === name.toLowerCase()
+      ) || leads.find(
+        (lead) =>
+          lead.name.toLowerCase().includes(name.toLowerCase()) ||
+          name.toLowerCase().includes(lead.name.toLowerCase())
+      );
+
+      recovered.push({
+        name,
+        phone,
+        address: normalizeText(rec.address) || matchedLead?.city || "",
+        city: matchedLead?.city || "",
+        reason: matchedLead?.reason || "Phone recovered via targeted search.",
+        website: matchedLead?.website || null,
+      });
+    }
+
+    return recovered;
+  } catch {
+    return [];
+  }
 }
 
 async function runOnlineResearchAttempt(input: {
@@ -1135,6 +1256,21 @@ async function runOnlineResearchAttempt(input: {
   const diagnostics = normalized.diagnostics;
   diagnostics.usedWebSearch = webSearchResult.usedWebSearch;
   diagnostics.sourceUrlCount = webSearchResult.sourceUrls.length;
+
+  if (
+    normalized.callablePlaces.length === 0 &&
+    normalized.websiteLeads.length > 0 &&
+    input.preferPlaces
+  ) {
+    const recovered = await recoverPhonesForLeads(
+      normalized.websiteLeads.slice(0, MAX_PHONE_RECOVERY_LEADS),
+      input.location
+    );
+    for (const place of recovered) {
+      normalized.callablePlaces.push(place);
+      diagnostics.recoveredPhone += 1;
+    }
+  }
 
   let places = normalized.callablePlaces;
   let websiteLeads = normalized.websiteLeads;
@@ -1208,7 +1344,7 @@ async function runOnlineResearchAttempt(input: {
 
   return {
     suggestions: rankedSuggestions,
-    websiteLead: websiteLeads[0] || null,
+    websiteLeads,
     diagnostics,
     sourceUrls: webSearchResult.sourceUrls,
   };
@@ -1225,7 +1361,7 @@ async function researchPlacesOnline(input: {
   if (!hasOpenAiApiKey()) {
     return {
       suggestions: [],
-      websiteLead: null,
+      websiteLeads: [],
       diagnostics: createEmptyDiagnostics(),
       sourceUrls: [],
     };
@@ -1265,7 +1401,7 @@ async function researchPlacesOnline(input: {
 
   return {
     suggestions: mergedSuggestions,
-    websiteLead: firstAttempt.websiteLead || secondAttempt.websiteLead,
+    websiteLeads: [...firstAttempt.websiteLeads, ...secondAttempt.websiteLeads],
     diagnostics: {
       ...mergeDiagnostics(firstAttempt.diagnostics, secondAttempt.diagnostics),
       finalSuggestions: mergedSuggestions.length,
@@ -1805,11 +1941,22 @@ function buildWebSourceNote(sourceUrls: string[]): string | null {
   return `Web sources checked: ${hosts.join(", ")}.`;
 }
 
-function buildWebsiteLeadNote(lead: OnlineWebsiteLead | null): string | null {
-  if (!lead) return null;
+function buildWebsiteLeadsNote(leads: OnlineWebsiteLead[]): string | null {
+  if (leads.length === 0) return null;
 
-  const citySegment = lead.city ? ` in ${lead.city}` : "";
-  return `No callable phone was found, but one lead${citySegment}: ${lead.name} (${lead.website}).`;
+  if (leads.length === 1) {
+    const lead = leads[0];
+    const citySegment = lead.city ? ` in ${lead.city}` : "";
+    return `No callable phone was found, but one lead${citySegment}: ${lead.name} (${lead.website}).`;
+  }
+
+  const leadLines = leads
+    .slice(0, 5)
+    .map((lead) => {
+      const citySegment = lead.city ? ` in ${lead.city}` : "";
+      return `${lead.name}${citySegment} (${lead.website})`;
+    });
+  return `No callable phones found, but ${leads.length} website leads: ${leadLines.join("; ")}.`;
 }
 
 function logOnlineResearchDiagnostics(input: {
@@ -1875,7 +2022,7 @@ export async function POST(request: Request) {
 
   let onlineResearchResult: OnlineResearchResult = {
     suggestions: [],
-    websiteLead: null,
+    websiteLeads: [],
     diagnostics: createEmptyDiagnostics(),
     sourceUrls: [],
   };
@@ -1893,7 +2040,7 @@ export async function POST(request: Request) {
     } catch (error) {
       onlineResearchResult = {
         suggestions: [],
-        websiteLead: null,
+        websiteLeads: [],
         diagnostics: createEmptyDiagnostics(),
         sourceUrls: [],
       };
@@ -1902,9 +2049,9 @@ export async function POST(request: Request) {
   }
   const onlineSuggestions = onlineResearchResult.suggestions;
   const webSourceNote = buildWebSourceNote(onlineResearchResult.sourceUrls);
-  const websiteLeadNote =
+  const websiteLeadsNote =
     onlineSuggestions.length === 0
-      ? buildWebsiteLeadNote(onlineResearchResult.websiteLead)
+      ? buildWebsiteLeadsNote(onlineResearchResult.websiteLeads)
       : null;
 
   logOnlineResearchDiagnostics({
@@ -1957,7 +2104,7 @@ export async function POST(request: Request) {
           : [
               "Live web place research returned no callable venues. Showing best available options.",
               buildResearchGapNote(onlineResearchResult.diagnostics),
-              websiteLeadNote,
+              websiteLeadsNote,
               webSourceNote,
             ]
               .filter(Boolean)
