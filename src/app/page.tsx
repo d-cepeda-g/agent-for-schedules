@@ -131,6 +131,51 @@ type CustomerLookup = {
 const COMPANY_ONSITE_DATE_LABEL = "06.03.2026";
 const ONSITE_BLOCKER_ACTION_ID = "company-onsite-blocker-2026-03-06";
 const ONSITE_SEARCH_DELAY_MS = 1600;
+const VALENTINE_RESULTS_DELAY_MS = 20_000;
+
+type ValentineCallResult = {
+  restaurantName: string;
+  cuisine: string;
+  area: string;
+  phone: string;
+  availableSlot: string;
+  partySize: string;
+  specialNote: string;
+  outcome: "available" | "limited" | "waitlist";
+};
+
+const MOCKED_VALENTINE_CALL_RESULTS: ValentineCallResult[] = [
+  {
+    restaurantName: "Tantris Maison Culinaire",
+    cuisine: "French Fine Dining",
+    area: "Schwabing, Munich",
+    phone: "+49 89 36 19 59-0",
+    availableSlot: "20:00 – Valentine's tasting menu for two",
+    partySize: "2 guests",
+    specialNote: "Last table available. 7-course Valentine menu at €189 per person, includes champagne aperitif.",
+    outcome: "limited",
+  },
+  {
+    restaurantName: "Matsuhisa Munich",
+    cuisine: "Japanese-Peruvian",
+    area: "Altstadt, Munich",
+    phone: "+49 (89) 290 98 834",
+    availableSlot: "19:30 or 21:15 – choice of two seatings",
+    partySize: "2 guests",
+    specialNote: "Omakase Valentine experience available (€160pp). Window table confirmed for the 21:15 slot.",
+    outcome: "available",
+  },
+  {
+    restaurantName: "brenner",
+    cuisine: "Italian / Grill",
+    area: "Altstadt-Lehel, Munich",
+    phone: "+49 89 45 22 880",
+    availableSlot: "20:30 – waitlisted, callback expected by Feb 12",
+    partySize: "2 guests",
+    specialNote: "Fully booked but added to priority waitlist. They suggest calling back Wednesday morning for cancellations.",
+    outcome: "waitlist",
+  },
+];
 
 const ONSITE_VENUES = [
   {
@@ -346,6 +391,12 @@ export default function DashboardPage() {
   const [showOnsiteLocations, setShowOnsiteLocations] = useState(false);
   const [findingOnsiteLocations, setFindingOnsiteLocations] = useState(false);
   const [selectedValentineOptionId, setSelectedValentineOptionId] = useState<string>("");
+  const [valentineCallsScheduled, setValentineCallsScheduled] = useState(false);
+  const [valentineSuccessBanner, setValentineSuccessBanner] = useState(false);
+  const [valentineResultsReady, setValentineResultsReady] = useState(false);
+  const [selectedLumiChoice, setSelectedLumiChoice] = useState<string>("");
+  const valentineResultsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const valentineBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [stats, setStats] = useState({
     totalCalls: 0,
     pending: 0,
@@ -410,6 +461,12 @@ export default function DashboardPage() {
   useEffect(() => {
     return () => {
       clearOnsiteSearchTimer();
+      if (valentineResultsTimerRef.current) {
+        clearTimeout(valentineResultsTimerRef.current);
+      }
+      if (valentineBannerTimerRef.current) {
+        clearTimeout(valentineBannerTimerRef.current);
+      }
     };
   }, []);
 
@@ -511,10 +568,16 @@ export default function DashboardPage() {
   );
 
   const aiOpsSummary = useMemo(() => {
+    if (valentineResultsReady) {
+      return "Lumi completed 3 Valentine reservation calls. Tantris has 1 table left (tasting menu, €189pp). Matsuhisa has two seatings available — 19:30 and 21:15 with a window table for the late slot. Brenner is fully booked but you're on the priority waitlist. Check the collected data below to pick your restaurant.";
+    }
+    if (valentineCallsScheduled) {
+      return "3 Valentine reservation calls are in progress. Lumi is currently speaking with Tantris, Matsuhisa, and Brenner. Results will appear automatically once all calls complete.";
+    }
     if (!insights) return "";
     if (hasPriorCalls) return insights.summary;
     return "No previous calls have been made yet. Once your first call is completed, AI Ops will summarize outcomes here. Proactive updates below are still available.";
-  }, [insights, hasPriorCalls]);
+  }, [insights, hasPriorCalls, valentineCallsScheduled, valentineResultsReady]);
 
   async function scheduleProactiveAction(
     action: ProactiveAction,
@@ -658,6 +721,22 @@ export default function DashboardPage() {
       }
 
       if (scheduledCount > 0) {
+        setValentineCallsScheduled(true);
+        setValentineSuccessBanner(true);
+        setValentinePanelDismissed(true);
+        writeValentinePanelDismissed(true);
+
+        valentineBannerTimerRef.current = setTimeout(() => {
+          setValentineSuccessBanner(false);
+          valentineBannerTimerRef.current = null;
+        }, 4000);
+
+        valentineResultsTimerRef.current = setTimeout(() => {
+          setValentineResultsReady(true);
+          setSelectedLumiChoice(MOCKED_VALENTINE_CALL_RESULTS[0].restaurantName);
+          valentineResultsTimerRef.current = null;
+        }, VALENTINE_RESULTS_DELAY_MS);
+
         const insightsRes = await fetch("/api/ai/dashboard-insights");
         if (insightsRes.ok) {
           const payload = (await insightsRes.json()) as DashboardInsights;
@@ -813,7 +892,105 @@ export default function DashboardPage() {
         </Card>
       ) : null}
 
-      {valentineAvailabilitySummary ? (
+      {valentineSuccessBanner ? (
+        <Card className="border-green-200 bg-green-50/50">
+          <CardContent className="flex items-center gap-4 p-6">
+            <div className="rounded-full bg-green-100 p-2">
+              <CheckCircle className="h-6 w-6 text-green-600" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-green-800">
+                3 Valentine reservation calls scheduled
+              </p>
+              <p className="text-xs text-green-700">
+                Lumi is calling the restaurants now. Results will appear here shortly...
+              </p>
+            </div>
+            <Loader2 className="h-5 w-5 animate-spin text-green-600" />
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {valentineResultsReady ? (
+        <Card className="border-pink-200">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Heart className="h-5 w-5 text-pink-500" />
+              Collected Data from Lumi
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Lumi called all 3 restaurants. Here&apos;s what she found — pick the one you&apos;d like to confirm.
+            </p>
+            <div className="grid gap-3 md:grid-cols-3">
+              {MOCKED_VALENTINE_CALL_RESULTS.map((result) => {
+                const isSelected = selectedLumiChoice === result.restaurantName;
+                const outcomeColors: Record<string, string> = {
+                  available: "bg-green-100 text-green-800 border-green-200",
+                  limited: "bg-amber-100 text-amber-800 border-amber-200",
+                  waitlist: "bg-red-100 text-red-800 border-red-200",
+                };
+                const outcomeLabels: Record<string, string> = {
+                  available: "Available",
+                  limited: "Limited availability",
+                  waitlist: "Waitlist only",
+                };
+                return (
+                  <button
+                    key={result.restaurantName}
+                    type="button"
+                    onClick={() => setSelectedLumiChoice(result.restaurantName)}
+                    className={`rounded-lg border p-4 text-left transition ${
+                      isSelected
+                        ? "border-pink-400 bg-pink-50 ring-2 ring-pink-200"
+                        : "border-border hover:bg-accent/40"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-semibold">{result.restaurantName}</p>
+                      <span className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-medium ${outcomeColors[result.outcome] || ""}`}>
+                        {outcomeLabels[result.outcome] || result.outcome}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {result.cuisine} · {result.area}
+                    </p>
+                    <p className="mt-2 text-xs font-medium">{result.availableSlot}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {result.specialNote}
+                    </p>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {result.phone} · {result.partySize}
+                    </p>
+                    {isSelected && (
+                      <div className="mt-3 flex items-center gap-1 text-xs font-medium text-pink-600">
+                        <CheckCircle className="h-3.5 w-3.5" />
+                        Selected
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-3">
+              <Button
+                disabled={!selectedLumiChoice}
+                onClick={() => {
+                  alert(`Confirming reservation at ${selectedLumiChoice}! Lumi will call back to finalize.`);
+                }}
+              >
+                Confirm Reservation at {selectedLumiChoice || "..."}
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Lumi will call back to finalize your booking.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {!valentineCallsScheduled && valentineAvailabilitySummary ? (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center justify-between gap-2">
@@ -917,6 +1094,31 @@ export default function DashboardPage() {
               <p className="text-sm">{aiOpsSummary}</p>
               {hasPriorCalls && insights.source === "fallback" && insights.source_reason ? (
                 <p className="text-xs text-amber-700">{insights.source_reason}</p>
+              ) : null}
+
+              {valentineCallsScheduled ? (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Valentine Call Status
+                  </p>
+                  <div className="grid gap-2 md:grid-cols-3">
+                    {MOCKED_VALENTINE_CALL_RESULTS.map((result) => (
+                      <div key={result.restaurantName} className="flex items-center gap-2 rounded-lg border p-2.5">
+                        {valentineResultsReady ? (
+                          <CheckCircle className="h-4 w-4 shrink-0 text-green-600" />
+                        ) : (
+                          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+                        )}
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-medium">{result.restaurantName}</p>
+                          <p className="text-[10px] text-muted-foreground">
+                            {valentineResultsReady ? `${result.outcome === "available" ? "Available" : result.outcome === "limited" ? "Limited" : "Waitlist"}` : "Calling..."}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               ) : null}
 
               <div className="space-y-2">
