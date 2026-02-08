@@ -82,6 +82,33 @@ type ScheduledCallResponse = {
   id: string;
 };
 
+const DISMISSED_ACTIONS_STORAGE_KEY = "dashboard:dismissed_proactive_action_ids";
+
+function readDismissedActionIds(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(DISMISSED_ACTIONS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((value): value is string => typeof value === "string");
+  } catch {
+    return [];
+  }
+}
+
+function writeDismissedActionIds(ids: string[]): void {
+  if (typeof window === "undefined") return;
+  if (ids.length === 0) {
+    window.localStorage.removeItem(DISMISSED_ACTIONS_STORAGE_KEY);
+    return;
+  }
+  window.localStorage.setItem(
+    DISMISSED_ACTIONS_STORAGE_KEY,
+    JSON.stringify(ids)
+  );
+}
+
 function parseIsoFromAction(action: ProactiveAction): string {
   const [year, month, day] = action.scheduled_date.split("-").map(Number);
   const [hour, minute] = action.scheduled_time.split(":").map(Number);
@@ -135,6 +162,7 @@ export default function DashboardPage() {
   const [insightsLoading, setInsightsLoading] = useState(true);
   const [quickCalling, setQuickCalling] = useState(false);
   const [actionCreatingId, setActionCreatingId] = useState<string | null>(null);
+  const [dismissedActionIds, setDismissedActionIds] = useState<string[]>([]);
   const [stats, setStats] = useState({
     totalCalls: 0,
     pending: 0,
@@ -188,6 +216,10 @@ export default function DashboardPage() {
       .finally(() => setInsightsLoading(false));
   }, []);
 
+  useEffect(() => {
+    setDismissedActionIds(readDismissedActionIds());
+  }, []);
+
   const statusColor: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
     pending: "outline",
     dispatching: "default",
@@ -197,9 +229,27 @@ export default function DashboardPage() {
     cancelled: "destructive",
   };
 
+  const dismissedActionIdSet = useMemo(
+    () => new Set(dismissedActionIds),
+    [dismissedActionIds]
+  );
+
   const sortedActions = useMemo(
-    () => insights?.proactive_actions?.slice(0, 6) || [],
-    [insights]
+    () =>
+      insights?.proactive_actions
+        ?.filter((action) => !dismissedActionIdSet.has(action.id))
+        .slice(0, 6) || [],
+    [insights, dismissedActionIdSet]
+  );
+
+  const visibleValentineRestaurants = useMemo(
+    () =>
+      insights?.valentines?.restaurants
+        ?.filter(
+          (restaurant) => !dismissedActionIdSet.has(restaurant.call_action.id)
+        )
+        .slice(0, 3) || [],
+    [insights, dismissedActionIdSet]
   );
 
   async function handleQuickCallDavid() {
@@ -285,6 +335,20 @@ export default function DashboardPage() {
     }
   }
 
+  function handleDismissProactiveAction(actionId: string) {
+    setDismissedActionIds((current) => {
+      if (current.includes(actionId)) return current;
+      const next = [...current, actionId];
+      writeDismissedActionIds(next);
+      return next;
+    });
+  }
+
+  function handleResetDismissedSuggestions() {
+    setDismissedActionIds([]);
+    writeDismissedActionIds([]);
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -353,11 +417,22 @@ export default function DashboardPage() {
             <Sparkles className="h-5 w-5" />
             AI Ops Copilot
           </CardTitle>
-          {insights?.source && (
-            <Badge variant={insights.source === "openai" ? "default" : "outline"}>
-              {insights.source === "openai" ? "OpenAI" : "Fallback"}
-            </Badge>
-          )}
+          <div className="flex items-center gap-2">
+            {dismissedActionIds.length > 0 ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleResetDismissedSuggestions}
+              >
+                Reset Hidden Suggestions
+              </Button>
+            ) : null}
+            {insights?.source && (
+              <Badge variant={insights.source === "openai" ? "default" : "outline"}>
+                {insights.source === "openai" ? "OpenAI" : "Fallback"}
+              </Badge>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {insightsLoading ? (
@@ -402,16 +477,24 @@ export default function DashboardPage() {
                         <p className="mt-2 text-xs text-muted-foreground">
                           {action.scheduled_date} at {action.scheduled_time}
                         </p>
-                        <Button
-                          className="mt-3"
-                          size="sm"
-                          disabled={actionCreatingId === action.id}
-                          onClick={() => handleRunProactiveAction(action)}
-                        >
-                          {actionCreatingId === action.id
-                            ? "Creating..."
-                            : "Create Scheduled Call"}
-                        </Button>
+                        <div className="mt-3 flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            disabled={actionCreatingId === action.id}
+                            onClick={() => handleRunProactiveAction(action)}
+                          >
+                            {actionCreatingId === action.id
+                              ? "Creating..."
+                              : "Create Scheduled Call"}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDismissProactiveAction(action.id)}
+                          >
+                            Dismiss
+                          </Button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -422,7 +505,7 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      {insights?.valentines?.restaurants?.length ? (
+      {visibleValentineRestaurants.length ? (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -431,9 +514,12 @@ export default function DashboardPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <p className="text-sm text-muted-foreground">{insights.valentines.prompt}</p>
+            <p className="text-sm text-muted-foreground">
+              {insights?.valentines.prompt ??
+                "Valentine's Day is coming. Want me to look for a restaurant reservation?"}
+            </p>
             <div className="grid gap-3 md:grid-cols-3">
-              {insights.valentines.restaurants.slice(0, 3).map((restaurant) => (
+              {visibleValentineRestaurants.map((restaurant) => (
                 <div key={restaurant.id} className="rounded-lg border p-3">
                   <p className="text-sm font-medium">{restaurant.name}</p>
                   <p className="text-xs text-muted-foreground">
@@ -442,16 +528,26 @@ export default function DashboardPage() {
                   <p className="mt-1 text-xs text-muted-foreground">
                     {restaurant.reservation_hint}
                   </p>
-                  <Button
-                    className="mt-3"
-                    size="sm"
-                    disabled={actionCreatingId === restaurant.call_action.id}
-                    onClick={() => handleRunProactiveAction(restaurant.call_action)}
-                  >
-                    {actionCreatingId === restaurant.call_action.id
-                      ? "Creating..."
-                      : "Schedule Reservation Call"}
-                  </Button>
+                  <div className="mt-3 flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      disabled={actionCreatingId === restaurant.call_action.id}
+                      onClick={() => handleRunProactiveAction(restaurant.call_action)}
+                    >
+                      {actionCreatingId === restaurant.call_action.id
+                        ? "Creating..."
+                        : "Schedule Reservation Call"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        handleDismissProactiveAction(restaurant.call_action.id)
+                      }
+                    >
+                      Dismiss
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
