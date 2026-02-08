@@ -1003,22 +1003,34 @@ export default function DashboardPage() {
               </div>
             ) : (
               <div className="flex items-center gap-3">
-                <Button
-                  disabled={!selectedLumiChoice || lumiConfirmingCall}
-                  onClick={handleConfirmLumiReservation}
-                >
-                  {lumiConfirmingCall ? (
+                {(() => {
+                  const selectedResult = MOCKED_VALENTINE_CALL_RESULTS.find(
+                    (r) => r.restaurantName === selectedLumiChoice
+                  );
+                  const isWaitlist = selectedResult?.outcome === "waitlist";
+                  return (
                     <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Lumi is confirming...
+                      <Button
+                        disabled={!selectedLumiChoice || lumiConfirmingCall || isWaitlist}
+                        onClick={handleConfirmLumiReservation}
+                      >
+                        {lumiConfirmingCall ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Lumi is confirming...
+                          </>
+                        ) : (
+                          `Confirm Reservation at ${selectedLumiChoice || "..."}`
+                        )}
+                      </Button>
+                      <p className="text-xs text-muted-foreground">
+                        {isWaitlist
+                          ? "This restaurant is fully booked. Pick another option."
+                          : "Lumi will call the restaurant to finalize your booking."}
+                      </p>
                     </>
-                  ) : (
-                    `Confirm Reservation at ${selectedLumiChoice || "..."}`
-                  )}
-                </Button>
-                <p className="text-xs text-muted-foreground">
-                  Lumi will call the restaurant to finalize your booking.
-                </p>
+                  );
+                })()}
               </div>
             )}
           </CardContent>
@@ -1083,15 +1095,6 @@ export default function DashboardPage() {
             <Sparkles className="h-5 w-5" />
             AI Ops Copilot
           </CardTitle>
-          {dismissedActionIds.length > 0 || valentinePanelDismissed ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleResetDismissedSuggestions}
-            >
-              Reset Hidden Suggestions
-            </Button>
-          ) : null}
         </CardHeader>
         <CardContent className="space-y-4">
           {insightsLoading ? (
@@ -1131,7 +1134,7 @@ export default function DashboardPage() {
                 <p className="text-xs text-amber-700">{insights.source_reason}</p>
               ) : null}
 
-              {valentineCallsScheduled ? (
+              {valentineCallsScheduled && !lumiReservationConfirmed ? (
                 <div className="space-y-2">
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     Valentine Call Status
@@ -1406,6 +1409,19 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {dismissedActionIds.length > 0 || valentinePanelDismissed ? (
+        <div className="flex justify-center">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs text-muted-foreground"
+            onClick={handleResetDismissedSuggestions}
+          >
+            Reset Hidden Suggestions
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
