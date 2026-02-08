@@ -73,6 +73,16 @@ type RestaurantSuggestion = {
   call_action: ProactiveAction;
 };
 
+type OnsiteLocationSuggestion = {
+  id: string;
+  name: string;
+  area: string;
+  address: string;
+  phone: string;
+  capacity_hint: string;
+  call_action: ProactiveAction;
+};
+
 type DashboardInsights = {
   summary: string;
   important_things: string[];
@@ -98,6 +108,44 @@ type CustomerLookup = {
   name: string;
   phone: string;
 };
+
+const COMPANY_ONSITE_DATE_LABEL = "06.03.2026";
+const ONSITE_BLOCKER_ACTION_ID = "company-onsite-blocker-2026-03-06";
+
+const ONSITE_VENUES = [
+  {
+    id: "venue-moc-event-center",
+    name: "MOC Event Center Messe München",
+    area: "Freimann, Munich",
+    address: "Lilienthalallee 40, 80939 Munich",
+    phone: "+49 89 32353-0",
+    capacity_hint: "Large conference format, flexible multi-room setups.",
+  },
+  {
+    id: "venue-smartvillage-bogenhausen",
+    name: "smartvillage Bogenhausen",
+    area: "Bogenhausen, Munich",
+    address: "Rosenkavalierplatz 13, 81925 Munich",
+    phone: "+49 89 24418290",
+    capacity_hint: "Modern workshop spaces for medium-sized team on-sites.",
+  },
+  {
+    id: "venue-infinity-conference",
+    name: "Infinity Hotel & Conference Resort Munich",
+    area: "Unterschleissheim (near Munich)",
+    address: "Andreas-Danzer-Weg 1, 85716 Unterschleissheim",
+    phone: "+49 89 370530-0",
+    capacity_hint: "Hotel + conference option for all-day on-site programs.",
+  },
+  {
+    id: "venue-h4-messe",
+    name: "H4 Hotel München Messe",
+    area: "Messestadt, Munich",
+    address: "Konrad-Zuse-Platz 14, 81829 Munich",
+    phone: "+49 89 9400850",
+    capacity_hint: "Convenient transit access and business meeting facilities.",
+  },
+] as const;
 
 function readDismissedActionIds(): string[] {
   if (typeof window === "undefined") return [];
@@ -147,6 +195,68 @@ function writeValentinePanelDismissed(value: boolean): void {
 
 function normalizePhoneForMatch(phone: string): string {
   return phone.replace(/\D+/g, "");
+}
+
+function formatDateOnly(date: Date): string {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getNextBusinessDayDateOnly(): string {
+  const candidate = new Date();
+  candidate.setDate(candidate.getDate() + 1);
+  candidate.setHours(9, 0, 0, 0);
+  return formatDateOnly(candidate);
+}
+
+function buildOnsiteBlockerAction(inquiryDate: string): ProactiveAction {
+  return {
+    id: ONSITE_BLOCKER_ACTION_ID,
+    title: "Blocker: company on-site is in ~1 month",
+    description: `Your company on-site is on ${COMPANY_ONSITE_DATE_LABEL}. Start venue availability outreach near Munich now.`,
+    customer_id: null,
+    call_reason: `Company on-site venue planning for ${COMPANY_ONSITE_DATE_LABEL}`,
+    call_purpose:
+      "Identify and contact event locations near Munich for on-site availability and fit.",
+    notes:
+      "Goal: gather venue availability, rough pricing, and room setup options for the company on-site.",
+    preferred_language: "English",
+    scheduled_date: inquiryDate,
+    scheduled_time: "10:00",
+    target_name: null,
+    target_phone: null,
+  };
+}
+
+function buildOnsiteLocationSuggestions(
+  inquiryDate: string
+): OnsiteLocationSuggestion[] {
+  return ONSITE_VENUES.map((venue) => ({
+    ...venue,
+    call_action: {
+      id: `onsite-${venue.id}`,
+      title: `Check ${venue.name} availability`,
+      description: `Call ${venue.name} to inquire about on-site availability around ${COMPANY_ONSITE_DATE_LABEL}.`,
+      customer_id: null,
+      call_reason: `Availability inquiry for company on-site (${COMPANY_ONSITE_DATE_LABEL})`,
+      call_purpose: `Ask ${venue.name} about availability, capacity fit, and indicative pricing for an on-site on ${COMPANY_ONSITE_DATE_LABEL}.`,
+      notes: [
+        `Venue: ${venue.name}`,
+        `Address: ${venue.address}`,
+        `Phone: ${venue.phone}`,
+        `On-site date: ${COMPANY_ONSITE_DATE_LABEL}`,
+        `Capacity context: ${venue.capacity_hint}`,
+        "Ask for: available time windows, room setup options, and next booking steps.",
+      ].join("\n"),
+      preferred_language: "English",
+      scheduled_date: inquiryDate,
+      scheduled_time: "10:00",
+      target_name: venue.name,
+      target_phone: venue.phone,
+    },
+  }));
 }
 
 function parseIsoFromAction(action: ProactiveAction): string {
@@ -204,6 +314,7 @@ export default function DashboardPage() {
   const [actionCreatingId, setActionCreatingId] = useState<string | null>(null);
   const [dismissedActionIds, setDismissedActionIds] = useState<string[]>([]);
   const [valentinePanelDismissed, setValentinePanelDismissed] = useState(false);
+  const [showOnsiteLocations, setShowOnsiteLocations] = useState(false);
   const [stats, setStats] = useState({
     totalCalls: 0,
     pending: 0,
@@ -276,6 +387,16 @@ export default function DashboardPage() {
     [dismissedActionIds]
   );
 
+  const onsiteInquiryDate = useMemo(() => getNextBusinessDayDateOnly(), []);
+  const onsiteBlockerAction = useMemo(
+    () => buildOnsiteBlockerAction(onsiteInquiryDate),
+    [onsiteInquiryDate]
+  );
+  const onsiteLocations = useMemo(
+    () => buildOnsiteLocationSuggestions(onsiteInquiryDate),
+    [onsiteInquiryDate]
+  );
+
   const sortedActions = useMemo(
     () =>
       insights?.proactive_actions
@@ -283,6 +404,18 @@ export default function DashboardPage() {
         .slice(0, 6) || [],
     [insights, dismissedActionIdSet]
   );
+
+  const proactiveActionsWithOnsite = useMemo(() => {
+    const actions = sortedActions.filter(
+      (action) => action.id !== ONSITE_BLOCKER_ACTION_ID
+    );
+
+    if (dismissedActionIdSet.has(ONSITE_BLOCKER_ACTION_ID)) {
+      return actions;
+    }
+
+    return [onsiteBlockerAction, ...actions];
+  }, [sortedActions, dismissedActionIdSet, onsiteBlockerAction]);
 
   const visibleValentineRestaurants = useMemo(
     () =>
@@ -292,6 +425,14 @@ export default function DashboardPage() {
         )
         .slice(0, 3) || [],
     [insights, dismissedActionIdSet]
+  );
+
+  const visibleOnsiteLocations = useMemo(
+    () =>
+      onsiteLocations.filter(
+        (location) => !dismissedActionIdSet.has(location.call_action.id)
+      ),
+    [onsiteLocations, dismissedActionIdSet]
   );
 
   async function handleQuickCallDavid() {
@@ -428,6 +569,9 @@ export default function DashboardPage() {
   }
 
   function handleDismissProactiveAction(actionId: string) {
+    if (actionId === ONSITE_BLOCKER_ACTION_ID) {
+      setShowOnsiteLocations(false);
+    }
     setDismissedActionIds((current) => {
       if (current.includes(actionId)) return current;
       const next = [...current, actionId];
@@ -441,6 +585,7 @@ export default function DashboardPage() {
     writeDismissedActionIds([]);
     setValentinePanelDismissed(false);
     writeValentinePanelDismissed(false);
+    setShowOnsiteLocations(false);
   }
 
   function handleDismissValentinePanel() {
@@ -585,11 +730,16 @@ export default function DashboardPage() {
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Proactive Actions (Auto-filled at 8:00 PM)
                 </p>
-                {sortedActions.length === 0 ? (
+                {proactiveActionsWithOnsite.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No proactive actions right now.</p>
                 ) : (
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {sortedActions.map((action) => (
+                  <div className="space-y-3">
+                    <div className="grid gap-3 md:grid-cols-2">
+                    {proactiveActionsWithOnsite.map((action) => {
+                      const isOnsiteBlocker = action.id === ONSITE_BLOCKER_ACTION_ID;
+                      const isCreating = actionCreatingId === action.id;
+
+                      return (
                       <div key={action.id} className="rounded-lg border p-3">
                         <p className="text-sm font-medium">{action.title}</p>
                         <p className="mt-1 text-xs text-muted-foreground">{action.description}</p>
@@ -599,12 +749,22 @@ export default function DashboardPage() {
                         <div className="mt-3 flex items-center gap-2">
                           <Button
                             size="sm"
-                            disabled={actionCreatingId === action.id}
-                            onClick={() => handleRunProactiveAction(action)}
+                            disabled={!isOnsiteBlocker && isCreating}
+                            onClick={() => {
+                              if (isOnsiteBlocker) {
+                                setShowOnsiteLocations((current) => !current);
+                                return;
+                              }
+                              void handleRunProactiveAction(action);
+                            }}
                           >
-                            {actionCreatingId === action.id
-                              ? "Creating..."
-                              : "Create Scheduled Call"}
+                            {isOnsiteBlocker
+                              ? showOnsiteLocations
+                                ? "Hide Event Locations"
+                                : "Find Event Locations"
+                              : isCreating
+                                ? "Creating..."
+                                : "Create Scheduled Call"}
                           </Button>
                           <Button
                             variant="outline"
@@ -615,7 +775,51 @@ export default function DashboardPage() {
                           </Button>
                         </div>
                       </div>
-                    ))}
+                    );
+                    })}
+                    </div>
+
+                    {showOnsiteLocations &&
+                    !dismissedActionIdSet.has(ONSITE_BLOCKER_ACTION_ID) ? (
+                      <div className="space-y-2 rounded-lg border p-3">
+                        <p className="text-sm font-medium">
+                          Event locations near Munich for company on-site on {COMPANY_ONSITE_DATE_LABEL}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Select a venue and schedule an availability inquiry call.
+                        </p>
+                        <div className="grid gap-3 md:grid-cols-2">
+                          {visibleOnsiteLocations.slice(0, 4).map((location) => (
+                            <div key={location.id} className="rounded-lg border p-3">
+                              <p className="text-sm font-medium">{location.name}</p>
+                              <p className="text-xs text-muted-foreground">{location.area}</p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {location.address}
+                              </p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {location.phone}
+                              </p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {location.capacity_hint}
+                              </p>
+                              <div className="mt-3">
+                                <Button
+                                  size="sm"
+                                  disabled={actionCreatingId === location.call_action.id}
+                                  onClick={() =>
+                                    void handleRunProactiveAction(location.call_action)
+                                  }
+                                >
+                                  {actionCreatingId === location.call_action.id
+                                    ? "Creating..."
+                                    : "Schedule Availability Inquiry Call"}
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 )}
               </div>
