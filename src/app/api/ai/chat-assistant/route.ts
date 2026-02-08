@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { createJsonCompletion, hasOpenAiApiKey } from "@/lib/openai";
+import {
+  createJsonCompletion,
+  createJsonCompletionWithWebSearch,
+  hasOpenAiApiKey,
+} from "@/lib/openai";
 import {
   type ProviderRecord,
   getProviderDirectory,
@@ -9,6 +13,7 @@ import {
 import { isLikelyPhoneNumber } from "@/lib/validation";
 
 const MAX_SUGGESTIONS = 3;
+const MAX_ONLINE_RESEARCH_RESULTS = 6;
 const DEFAULT_LANGUAGE = "English";
 
 const STOP_WORDS = new Set([
@@ -48,6 +53,27 @@ const STOP_WORDS = new Set([
 ]);
 
 const SERVICE_PATTERNS: Array<{ serviceType: string; keywords: string[] }> = [
+  {
+    serviceType: "event venue",
+    keywords: [
+      "venue",
+      "event space",
+      "party",
+      "birthday",
+      "celebration",
+      "offsite",
+      "on-site",
+      "onsite",
+    ],
+  },
+  {
+    serviceType: "bar",
+    keywords: ["bar", "rooftop", "cocktail", "lounge", "nightlife", "latin bar"],
+  },
+  {
+    serviceType: "restaurant",
+    keywords: ["restaurant", "dinner", "lunch", "reservation", "table"],
+  },
   { serviceType: "dentist", keywords: ["dentist", "dental", "teeth", "tooth"] },
   {
     serviceType: "auto repair",
@@ -146,6 +172,15 @@ type Plan = {
   serviceType: string;
   location: string;
   context: SuggestionContext;
+};
+
+type OnlinePlaceResearch = {
+  name: string;
+  phone: string;
+  address: string;
+  city: string;
+  reason: string;
+  website: string | null;
 };
 
 function toRecord(value: unknown): Record<string, unknown> | null {
@@ -455,6 +490,26 @@ function detectServiceType(message: string): string {
   return "";
 }
 
+function isVenueLikeRequest(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return [
+    "venue",
+    "event space",
+    "party",
+    "birthday",
+    "bar",
+    "rooftop",
+    "restaurant",
+    "reservation",
+    "dinner",
+    "wedding",
+    "celebration",
+    "offsite",
+    "on-site",
+    "onsite",
+  ].some((keyword) => normalized.includes(keyword));
+}
+
 function detectLocation(message: string): string {
   const normalized = message.toLowerCase();
   if (normalized.includes("sf")) return "San Francisco";
@@ -585,7 +640,8 @@ function buildAdHocSuggestion(
   name: string,
   phone: string,
   context: SuggestionContext,
-  reason: string
+  reason: string,
+  details?: string
 ): ChatSuggestion {
   return {
     id: `lead-${normalizePhone(phone) || name.toLowerCase().replace(/\s+/g, "-")}`,
@@ -596,11 +652,135 @@ function buildAdHocSuggestion(
     customerId: null,
     callReason: context.callReason,
     callPurpose: context.callPurpose,
-    notes: context.callPurpose,
+    notes: details ? `${context.callPurpose}\n${details}` : context.callPurpose,
     preferredLanguage: context.preferredLanguage,
     scheduledDate: context.scheduledDate,
     scheduledTime: context.scheduledTime,
   };
+}
+
+function sanitizeOnlineResearchPayload(raw: unknown): OnlinePlaceResearch[] {
+  const record = toRecord(raw);
+  if (!record) return [];
+
+  const entries = Array.isArray(record.places) ? record.places : [];
+  const places: OnlinePlaceResearch[] = [];
+  for (const item of entries) {
+    const placeRecord = toRecord(item);
+    if (!placeRecord) continue;
+
+    const name = normalizeText(placeRecord.name);
+    const phone = normalizeText(placeRecord.phone);
+    if (!name || !phone || !isLikelyPhoneNumber(phone)) continue;
+
+    const address = normalizeText(placeRecord.address);
+    const city = normalizeText(placeRecord.city);
+    const reason = normalizeText(
+      placeRecord.reason,
+      "Online match for this request."
+    );
+    const websiteRaw = normalizeText(placeRecord.website);
+    const website = websiteRaw || null;
+
+    places.push({
+      name,
+      phone,
+      address,
+      city,
+      reason,
+      website,
+    });
+  }
+
+  return places.slice(0, MAX_ONLINE_RESEARCH_RESULTS);
+}
+
+function buildOnlineResearchPrompt(
+  message: string,
+  serviceType: string,
+  location: string
+): { systemPrompt: string; userPrompt: string } {
+  const today = new Date();
+  const todayIso = today.toISOString().slice(0, 10);
+  const inferredService = serviceType || "requested event/location";
+  const inferredLocation = location || "the location implied by the request";
+
+  const systemPrompt = [
+    "You are Lumi, researching real businesses on the public web.",
+    "Use web search to find currently operating places that match the request.",
+    "Only return places with a publicly listed phone number that can be called.",
+    "Do not fabricate places, phones, or addresses.",
+    "Return strict JSON with this shape:",
+    "{",
+    '  "places": [',
+    "    {",
+    '      "name": string,',
+    '      "phone": string,',
+    '      "address": string,',
+    '      "city": string,',
+    '      "reason": string,',
+    '      "website": string',
+    "    }",
+    "  ]",
+    "}",
+    `Return at most ${MAX_ONLINE_RESEARCH_RESULTS} places.`,
+  ].join("\n");
+
+  const userPrompt = [
+    `Today is ${todayIso}.`,
+    `User request: ${message}`,
+    `Service intent: ${inferredService}`,
+    `Location hint: ${inferredLocation}`,
+    "Find strong matches where the phone number is available for immediate outreach.",
+  ].join("\n");
+
+  return { systemPrompt, userPrompt };
+}
+
+async function researchPlacesOnline(input: {
+  message: string;
+  serviceType: string;
+  location: string;
+  context: SuggestionContext;
+  existingPhones: Set<string>;
+}): Promise<ChatSuggestion[]> {
+  if (!hasOpenAiApiKey()) return [];
+
+  const { systemPrompt, userPrompt } = buildOnlineResearchPrompt(
+    input.message,
+    input.serviceType,
+    input.location
+  );
+
+  const raw = await createJsonCompletionWithWebSearch({
+    systemPrompt,
+    userPrompt,
+    temperature: 0.1,
+    maxTokens: 900,
+    searchContextSize: "high",
+  });
+
+  const places = sanitizeOnlineResearchPayload(raw);
+  const suggestions = places
+    .filter((place) => !input.existingPhones.has(normalizePhone(place.phone)))
+    .map((place) =>
+      buildAdHocSuggestion(
+        place.name,
+        place.phone,
+        input.context,
+        place.reason,
+        [
+          place.address ? `Address: ${place.address}` : "",
+          place.city ? `City: ${place.city}` : "",
+          place.website ? `Website: ${place.website}` : "",
+          "Source: live web research",
+        ]
+          .filter(Boolean)
+          .join("\n")
+      )
+    );
+
+  return dedupeSuggestions(suggestions).slice(0, MAX_SUGGESTIONS);
 }
 
 function dedupeSuggestions(suggestions: ChatSuggestion[]): ChatSuggestion[] {
@@ -756,6 +936,7 @@ async function buildOpenAiPlan(
   history: ChatHistoryItem[],
   contextMessage: string,
   eventDate: Date | null,
+  preferPlaces: boolean,
   contacts: Contact[],
   fallback: Plan
 ): Promise<Plan> {
@@ -771,6 +952,10 @@ async function buildOpenAiPlan(
     "You are Lumi, an operations scheduler assistant.",
     "Choose the best people or businesses to contact based on the user request.",
     "Prefer exact existing contacts when available, otherwise pick researched providers.",
+    "Prefer web-researched places with real phone numbers when available.",
+    preferPlaces
+      ? "This request is place/venue-oriented. Include at least 2 place suggestions with callable phone numbers. Contacts can be additional, not the only options."
+      : "If this request is place/venue-oriented, include at least 2 place suggestions with callable phone numbers.",
     "Outreach calls must be scheduled as soon as possible and before the event date.",
     "Return strict JSON with this shape:",
     "{",
@@ -811,6 +996,7 @@ async function buildOpenAiPlan(
     historyBlock,
     "",
     `Latest user request: ${message}`,
+    `Prefer place-first suggestions: ${preferPlaces ? "yes" : "no"}`,
     "",
     `Default scheduled date: ${fallback.context.scheduledDate}`,
     `Default scheduled time: ${fallback.context.scheduledTime}`,
@@ -1013,6 +1199,7 @@ export async function POST(request: Request) {
   const contextMessage = buildContextMessage(message, history);
   const eventDate =
     parseEventDateFromText(message) || parseEventDateFromText(contextMessage);
+  const preferPlaces = isVenueLikeRequest(contextMessage);
 
   const contacts = await db.customer.findMany({
     orderBy: { updatedAt: "desc" },
@@ -1026,12 +1213,43 @@ export async function POST(request: Request) {
     },
   });
 
-  const fallbackPlan = buildFallbackPlan(
+  const fallbackPlanBase = buildFallbackPlan(
     message,
     contextMessage,
     eventDate,
     contacts
   );
+  const contactPhones = new Set(
+    contacts.map((contact) => normalizePhone(contact.phone)).filter(Boolean)
+  );
+
+  let onlineSuggestions: ChatSuggestion[] = [];
+  if (hasOpenAiApiKey()) {
+    try {
+      onlineSuggestions = await researchPlacesOnline({
+        message: contextMessage,
+        serviceType: fallbackPlanBase.serviceType,
+        location: fallbackPlanBase.location,
+        context: fallbackPlanBase.context,
+        existingPhones: contactPhones,
+      });
+    } catch {
+      onlineSuggestions = [];
+    }
+  }
+
+  const fallbackPlan: Plan = {
+    ...fallbackPlanBase,
+    suggestions: preferPlaces
+      ? dedupeSuggestions([
+          ...onlineSuggestions,
+          ...fallbackPlanBase.suggestions,
+        ]).slice(0, MAX_SUGGESTIONS)
+      : dedupeSuggestions([
+          ...fallbackPlanBase.suggestions,
+          ...onlineSuggestions,
+        ]).slice(0, MAX_SUGGESTIONS),
+  };
 
   if (!hasOpenAiApiKey()) {
     return NextResponse.json(
@@ -1049,6 +1267,7 @@ export async function POST(request: Request) {
       history,
       contextMessage,
       eventDate,
+      preferPlaces,
       contacts,
       fallbackPlan
     );
