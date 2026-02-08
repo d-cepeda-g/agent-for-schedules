@@ -139,6 +139,13 @@ export async function createJsonCompletion(
 export async function createJsonCompletionWithWebSearch(
   input: WebJsonCompletionInput
 ): Promise<unknown> {
+  const content = await createWebSearchTextCompletion(input);
+  return extractJsonFromContent(content);
+}
+
+export async function createWebSearchTextCompletion(
+  input: WebJsonCompletionInput
+): Promise<string> {
   const apiKey = readOpenAiApiKey();
   if (!apiKey) {
     throw new Error("OpenAI API key not configured");
@@ -183,6 +190,5 @@ export async function createJsonCompletionWithWebSearch(
   }
 
   const payload = (await response.json()) as ResponsesApiResponse;
-  const content = extractTextFromResponsesPayload(payload);
-  return extractJsonFromContent(content);
+  return extractTextFromResponsesPayload(payload);
 }

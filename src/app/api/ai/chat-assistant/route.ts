@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import {
   createJsonCompletion,
-  createJsonCompletionWithWebSearch,
+  createWebSearchTextCompletion,
   hasOpenAiApiKey,
 } from "@/lib/openai";
 import {
@@ -14,6 +14,7 @@ import { isLikelyPhoneNumber } from "@/lib/validation";
 
 const MAX_SUGGESTIONS = 3;
 const MAX_ONLINE_RESEARCH_RESULTS = 6;
+const MAX_WEB_RESEARCH_TEXT_CHARS = 12000;
 const DEFAULT_LANGUAGE = "English";
 
 const STOP_WORDS = new Set([
@@ -823,12 +824,54 @@ function buildOnlineResearchPrompt(
 
   const systemPrompt = [
     "You are Lumi, researching real businesses on the public web.",
-    "Use web search to find currently operating places that match the request.",
-    "Only return places with a publicly listed phone number that can be called.",
+    "Use web search to find currently operating businesses that match the request.",
+    "Return only businesses with a publicly listed callable phone number.",
     preferPlaces
       ? "Return venues/business places only (bars, clubs, restaurants, event spaces). Do not return individual personal contacts."
       : "Prefer venues/business places when the request mentions location, reservation, bars, restaurants, or events.",
-    "Do not fabricate places, phones, or addresses.",
+    "If the target city is provided, exclude places outside that city.",
+    "Do not fabricate names, phones, websites, or addresses.",
+    "Return concise place research notes including name, phone, city, address (if available), website (if available), and one short reason.",
+    `Return at most ${MAX_ONLINE_RESEARCH_RESULTS} places and prefer official business listings.`,
+  ].join("\n");
+
+  const userPrompt = [
+    `Today is ${todayIso}.`,
+    `User request: ${message}`,
+    `Service intent: ${inferredService}`,
+    `Target location: ${inferredLocation}`,
+    `Place-first mode: ${preferPlaces ? "yes" : "no"}`,
+    `Use this location for venue search unless the user explicitly requests a different city: ${inferredLocation}.`,
+    "Find strong matches where the phone number is available for immediate outreach.",
+  ].join("\n");
+
+  return { systemPrompt, userPrompt };
+}
+
+function buildWebResearchNormalizationPrompt(input: {
+  rawWebText: string;
+  serviceType: string;
+  location: string;
+  preferPlaces: boolean;
+}): { systemPrompt: string; userPrompt: string } {
+  const inferredService = input.serviceType || "requested event/location";
+  const inferredLocation = input.location || "the location implied by the request";
+  const rawText =
+    input.rawWebText.length > MAX_WEB_RESEARCH_TEXT_CHARS
+      ? input.rawWebText.slice(0, MAX_WEB_RESEARCH_TEXT_CHARS)
+      : input.rawWebText;
+
+  const systemPrompt = [
+    "You normalize web research notes into strict JSON.",
+    "Use only places that are explicitly present in the source text.",
+    "Never invent businesses, phones, websites, addresses, or cities.",
+    "Only include entries with a callable phone number.",
+    input.preferPlaces
+      ? "Only include venue-like businesses (bars, restaurants, clubs, event spaces). Exclude people and non-venue services."
+      : "Prefer venue-like businesses when possible.",
+    input.location
+      ? "If a place is clearly outside the target location, exclude it."
+      : "If location is uncertain, keep only clearly relevant entries.",
     "Return strict JSON with this shape:",
     "{",
     '  "places": [',
@@ -842,17 +885,14 @@ function buildOnlineResearchPrompt(
     "    }",
     "  ]",
     "}",
-    `Return at most ${MAX_ONLINE_RESEARCH_RESULTS} places.`,
   ].join("\n");
 
   const userPrompt = [
-    `Today is ${todayIso}.`,
-    `User request: ${message}`,
     `Service intent: ${inferredService}`,
-    `Location hint: ${inferredLocation}`,
-    `Place-first mode: ${preferPlaces ? "yes" : "no"}`,
-    `Use this location for venue search unless user explicitly requests a different city: ${inferredLocation}.`,
-    "Find strong matches where the phone number is available for immediate outreach.",
+    `Target location: ${inferredLocation}`,
+    `Place-first mode: ${input.preferPlaces ? "yes" : "no"}`,
+    "Source web research text:",
+    rawText,
   ].join("\n");
 
   return { systemPrompt, userPrompt };
@@ -875,7 +915,7 @@ async function researchPlacesOnline(input: {
     input.preferPlaces
   );
 
-  const raw = await createJsonCompletionWithWebSearch({
+  const rawWebText = await createWebSearchTextCompletion({
     systemPrompt,
     userPrompt,
     temperature: 0.1,
@@ -883,7 +923,35 @@ async function researchPlacesOnline(input: {
     searchContextSize: "high",
   });
 
-  const places = sanitizeOnlineResearchPayload(raw);
+  const { systemPrompt: normalizeSystemPrompt, userPrompt: normalizeUserPrompt } =
+    buildWebResearchNormalizationPrompt({
+      rawWebText,
+      serviceType: input.serviceType,
+      location: input.location,
+      preferPlaces: input.preferPlaces,
+    });
+
+  const normalizedPayload = await createJsonCompletion({
+    systemPrompt: normalizeSystemPrompt,
+    userPrompt: normalizeUserPrompt,
+    temperature: 0,
+    maxTokens: 900,
+  });
+
+  let places = sanitizeOnlineResearchPayload(normalizedPayload);
+  if (input.preferPlaces && input.location.trim()) {
+    const locationNeedle = input.location.trim().toLowerCase();
+    const matchingPlaces = places.filter((place) =>
+      [place.name, place.address, place.city, place.reason]
+        .join(" ")
+        .toLowerCase()
+        .includes(locationNeedle)
+    );
+    if (matchingPlaces.length > 0) {
+      places = matchingPlaces;
+    }
+  }
+
   const suggestions = places
     .filter((place) => !input.existingPhones.has(normalizePhone(place.phone)))
     .map((place) =>
@@ -946,6 +1014,52 @@ function ensureLocationMention(
   if (!preferPlaces || !location.trim()) return reply;
   if (reply.toLowerCase().includes(location.toLowerCase())) return reply;
   return `${reply.trim()} Search location: ${location}.`;
+}
+
+function buildReplyForSuggestionCount(
+  suggestionCount: number,
+  preferPlaces: boolean,
+  location: string
+): string {
+  const replyBase = preferPlaces
+    ? suggestionCount > 0
+      ? `I found ${suggestionCount} place${
+          suggestionCount > 1 ? "s" : ""
+        } you can call for this request.`
+      : "I could not identify callable venues from the current data."
+    : suggestionCount > 0
+      ? `I found ${suggestionCount} contact${
+          suggestionCount > 1 ? "s" : ""
+        } to call for this request.`
+      : "I could not identify a reliable contact from the current data.";
+
+  return ensureLocationMention(replyBase, location, preferPlaces);
+}
+
+function isExplicitSuggestionMentioned(
+  contextMessage: string,
+  suggestionName: string
+): boolean {
+  const messageLower = contextMessage.toLowerCase();
+  const nameLower = suggestionName.trim().toLowerCase();
+  if (!nameLower) return false;
+  return messageLower.includes(nameLower);
+}
+
+function pickLegacyContactForPlaceMode(
+  contextMessage: string,
+  suggestions: ChatSuggestion[]
+): ChatSuggestion | null {
+  const legacyContacts = suggestions.filter(
+    (suggestion) => suggestion.source === "existing_contact"
+  );
+  if (legacyContacts.length === 0) return null;
+
+  return (
+    legacyContacts.find((suggestion) =>
+      isExplicitSuggestionMentioned(contextMessage, suggestion.name)
+    ) || legacyContacts[0]
+  );
 }
 
 function dedupeSuggestions(suggestions: ChatSuggestion[]): ChatSuggestion[] {
@@ -1071,7 +1185,7 @@ function buildFallbackPlan(
     ...providerSuggestions,
   ]).slice(0, MAX_SUGGESTIONS);
 
-  if (suggestions.length === 0 && contacts.length > 0) {
+  if (!preferPlaces && suggestions.length === 0 && contacts.length > 0) {
     suggestions = [
       buildSuggestionFromContact(
         contacts[0],
@@ -1081,18 +1195,11 @@ function buildFallbackPlan(
     ];
   }
 
-  const replyBase = preferPlaces
-    ? suggestions.length > 0
-      ? `I found ${suggestions.length} place${
-          suggestions.length > 1 ? "s" : ""
-        } you can call for this request.`
-      : "I could not identify callable venues from the current data."
-    : suggestions.length > 0
-      ? `I found ${suggestions.length} contact${
-          suggestions.length > 1 ? "s" : ""
-        } to call for this request.`
-      : "I could not identify a reliable contact from the current data.";
-  const reply = ensureLocationMention(replyBase, location, preferPlaces);
+  const reply = buildReplyForSuggestionCount(
+    suggestions.length,
+    preferPlaces,
+    location
+  );
 
   return {
     reply,
@@ -1433,22 +1540,36 @@ export async function POST(request: Request) {
     }
   }
 
+  const legacyContactForPlaceMode = pickLegacyContactForPlaceMode(
+    contextMessage,
+    fallbackPlanBase.suggestions
+  );
   const fallbackCandidates = preferPlaces
     ? onlineSuggestions.length > 0
       ? [
-          ...onlineSuggestions,
-          ...fallbackPlanBase.suggestions.filter(
-            (suggestion) => suggestion.source === "existing_contact"
+          ...onlineSuggestions.slice(
+            0,
+            Math.max(
+              1,
+              MAX_SUGGESTIONS - (legacyContactForPlaceMode ? 1 : 0)
+            )
           ),
+          ...(legacyContactForPlaceMode ? [legacyContactForPlaceMode] : []),
         ]
-      : fallbackPlanBase.suggestions.filter(
-          (suggestion) => suggestion.source === "existing_contact"
-        )
+      : legacyContactForPlaceMode
+        ? [legacyContactForPlaceMode]
+        : []
     : [...fallbackPlanBase.suggestions, ...onlineSuggestions];
+  const fallbackSuggestions = rankSuggestions(fallbackCandidates, preferPlaces);
 
   const fallbackPlan: Plan = {
     ...fallbackPlanBase,
-    suggestions: rankSuggestions(fallbackCandidates, preferPlaces),
+    reply: buildReplyForSuggestionCount(
+      fallbackSuggestions.length,
+      preferPlaces,
+      fallbackPlanBase.location
+    ),
+    suggestions: fallbackSuggestions,
     sourceReason:
       preferPlaces && onlineSuggestions.length === 0
         ? onlineResearchError
@@ -1469,6 +1590,15 @@ export async function POST(request: Request) {
     );
   }
 
+  if (preferPlaces) {
+    return NextResponse.json(
+      toAssistantResponse({
+        ...fallbackPlan,
+        source: onlineSuggestions.length > 0 ? "openai" : "fallback",
+      })
+    );
+  }
+
   try {
     const openAiPlan = await buildOpenAiPlan(
       message,
@@ -1479,10 +1609,10 @@ export async function POST(request: Request) {
       contacts,
       fallbackPlan
     );
-    const merged = rankSuggestions([
-      ...openAiPlan.suggestions,
-      ...fallbackPlan.suggestions,
-    ], preferPlaces);
+    const merged = rankSuggestions(
+      [...openAiPlan.suggestions, ...fallbackPlan.suggestions],
+      false
+    );
 
     return NextResponse.json(
       toAssistantResponse({
