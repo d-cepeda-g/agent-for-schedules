@@ -72,6 +72,7 @@ export default function CustomersPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [pageError, setPageError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -133,13 +134,14 @@ export default function CustomersPage() {
       const data = (await response.json().catch(() => null)) as
         | { error?: string }
         | null;
-      alert(data?.error || "Failed to save contact");
+      setPageError(data?.error || "Failed to save contact");
       return;
     }
 
     setFormData(EMPTY_FORM);
     setEditingId(null);
     setDialogOpen(false);
+    setPageError(null);
     refreshCustomers();
   }
 
@@ -165,7 +167,7 @@ export default function CustomersPage() {
         const data = (await response.json().catch(() => null)) as
           | { error?: string }
           | null;
-        alert(data?.error || "Failed to delete contact");
+        setPageError(data?.error || "Failed to delete contact");
         return;
       }
       refreshCustomers();
@@ -278,6 +280,20 @@ export default function CustomersPage() {
           </DialogContent>
         </Dialog>
       </div>
+
+      {pageError && (
+        <div className="flex items-center justify-between rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-2 text-sm text-destructive">
+          <span>{pageError}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-auto px-2 py-1 text-xs text-destructive hover:text-destructive"
+            onClick={() => setPageError(null)}
+          >
+            Dismiss
+          </Button>
+        </div>
+      )}
 
       <Card>
         <CardHeader>

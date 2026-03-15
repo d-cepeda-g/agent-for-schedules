@@ -56,6 +56,7 @@ function SchedulePageContent() {
   const searchParams = useSearchParams();
   const hasAppliedPrefill = useRef(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customersLoading, setCustomersLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(
     new Date()
   );
@@ -68,11 +69,14 @@ function SchedulePageContent() {
   const [daysCalls, setDaysCalls] = useState<ScheduledCall[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
 
     async function loadCustomers() {
+      setCustomersLoading(true);
       try {
         const response = await fetch("/api/customers");
         if (!response.ok) return;
@@ -80,6 +84,8 @@ function SchedulePageContent() {
         if (active) setCustomers(data);
       } catch {
         // Ignore transient fetch errors and keep current UI state.
+      } finally {
+        if (active) setCustomersLoading(false);
       }
     }
 
@@ -183,9 +189,13 @@ function SchedulePageContent() {
     if (!selectedDate || !customerId) return;
 
     setSubmitting(true);
+    setFormError(null);
+    setSuccessMessage(null);
     const [hours, minutes] = time.split(":").map(Number);
     const scheduledAt = new Date(selectedDate);
     scheduledAt.setHours(hours, minutes, 0, 0);
+
+    const customer = customers.find((c) => c.id === customerId);
 
     try {
       const response = await fetch("/api/calls", {
@@ -205,10 +215,13 @@ function SchedulePageContent() {
         const data = (await response.json().catch(() => null)) as
           | { error?: string }
           | null;
-        alert(data?.error || "Failed to schedule call");
+        setFormError(data?.error || "Failed to schedule call");
         return;
       }
 
+      const customerName = customer?.name || "contact";
+      const timeLabel = format(scheduledAt, "h:mm a");
+      setSuccessMessage(`Call scheduled for ${customerName} at ${timeLabel}.`);
       setNotes("");
       setCallReason("");
       setCallPurpose("");
@@ -229,10 +242,11 @@ function SchedulePageContent() {
       const data = (await response.json().catch(() => null)) as
         | { error?: string }
         | null;
-      alert(data?.error || "Failed to cancel call");
+      setFormError(data?.error || "Failed to cancel call");
       return;
     }
 
+    setFormError(null);
     refreshDayCalls();
   }
 
@@ -286,6 +300,22 @@ function SchedulePageContent() {
               </CardDescription>
             </CardHeader>
             <CardContent>
+              {successMessage && (
+                <div className="mb-4 flex items-center justify-between rounded-lg border border-border bg-muted px-4 py-3 text-sm">
+                  <span>{successMessage}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-auto px-2 py-1 text-xs"
+                    onClick={() => setSuccessMessage(null)}
+                  >
+                    Dismiss
+                  </Button>
+                </div>
+              )}
+              {formError && (
+                <p className="mb-4 text-sm text-destructive">{formError}</p>
+              )}
               <form onSubmit={handleSchedule} className="space-y-4">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
@@ -293,9 +323,18 @@ function SchedulePageContent() {
                     <Select
                       value={customerId}
                       onValueChange={handleCustomerSelection}
+                      disabled={customersLoading}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Select customer" />
+                        <SelectValue
+                          placeholder={
+                            customersLoading
+                              ? "Loading contacts..."
+                              : customers.length === 0
+                                ? "No contacts yet"
+                                : "Select customer"
+                          }
+                        />
                       </SelectTrigger>
                       <SelectContent>
                         {customers.map((c) => (
@@ -375,7 +414,7 @@ function SchedulePageContent() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Clock className="h-5 w-5" />
-                Calls on {selectedDate ? format(selectedDate, "MMM d, yyyy") : "..."}
+                {selectedDate ? `Calls on ${format(selectedDate, "MMM d, yyyy")}` : "Select a date to view calls"}
               </CardTitle>
             </CardHeader>
             <CardContent>

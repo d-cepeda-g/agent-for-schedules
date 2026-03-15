@@ -205,7 +205,11 @@ export default function CalendarViewPage() {
             <Calendar
               mode="single"
               month={month}
-              onMonthChange={setMonth}
+              onMonthChange={(newMonth) => {
+                setMonth(newMonth);
+                // Reset selection to first day of new month to avoid stale cross-month selection
+                setSelectedDate(new Date(newMonth.getFullYear(), newMonth.getMonth(), 1));
+              }}
               selected={selectedDate}
               onSelect={setSelectedDate}
               modifiers={{ hasCalls: daysWithCalls }}

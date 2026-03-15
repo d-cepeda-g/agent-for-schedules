@@ -146,6 +146,7 @@ export default function CallDetailPage() {
   const [call, setCall] = useState<CallDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [dispatching, setDispatching] = useState(false);
   const [fetchingEval, setFetchingEval] = useState(false);
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
@@ -269,13 +270,14 @@ export default function CallDetailPage() {
 
   async function handleDispatch() {
     setDispatching(true);
+    setActionMessage(null);
     try {
       const res = await fetch(`/api/calls/${callId}/dispatch`, {
         method: "POST",
       });
       if (!res.ok) {
         const data = await res.json();
-        alert(data.error || "Failed to dispatch");
+        setActionMessage(data.error || "Failed to dispatch");
         return;
       }
       await refreshCallDetails();
@@ -286,11 +288,12 @@ export default function CallDetailPage() {
 
   async function handleFetchEvaluation() {
     setFetchingEval(true);
+    setActionMessage(null);
     try {
       const res = await fetch(`/api/calls/${callId}/evaluation`);
       if (!res.ok) {
         const data = await res.json();
-        alert(data.error || "Failed to fetch evaluation");
+        setActionMessage(data.error || "Failed to fetch evaluation");
         return;
       }
       await refreshCallDetails();
@@ -304,13 +307,13 @@ export default function CallDetailPage() {
     if (!call) return;
 
     if (!editCustomerId) {
-      alert("Please select an assigned contact.");
+      setActionMessage("Please select an assigned contact.");
       return;
     }
 
     const scheduledAt = toIsoFromDateTimeInputs(editDate, editTime);
     if (!scheduledAt) {
-      alert("Please enter a valid date and time.");
+      setActionMessage("Please enter a valid date and time.");
       return;
     }
 
@@ -338,7 +341,7 @@ export default function CallDetailPage() {
         const message =
           (payload && "error" in payload ? payload.error : null) ||
           "Failed to update call";
-        alert(message);
+        setActionMessage(message);
         return;
       }
 
@@ -371,7 +374,7 @@ export default function CallDetailPage() {
         | null;
 
       if (!response.ok) {
-        alert(payload?.error || "Failed to delete call");
+        setActionMessage(payload?.error || "Failed to delete call");
         return;
       }
 
@@ -442,6 +445,19 @@ export default function CallDetailPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {actionMessage && (
+                <div className="flex items-center justify-between rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-2 text-sm text-destructive">
+                  <span>{actionMessage}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-auto px-2 py-1 text-xs text-destructive hover:text-destructive"
+                    onClick={() => setActionMessage(null)}
+                  >
+                    Dismiss
+                  </Button>
+                </div>
+              )}
               {call.notes && (
                 <div>
                   <p className="text-sm font-medium">Notes</p>
@@ -750,7 +766,7 @@ export default function CallDetailPage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                       {transcriptLines.map((line, i) => {
                         const isAgent = line.startsWith("agent:");
                         const message = line
@@ -760,20 +776,27 @@ export default function CallDetailPage() {
                         return (
                           <div
                             key={i}
-                            className={`flex ${isAgent ? "justify-start" : "justify-end"}`}
+                            className={`flex items-end gap-2 ${isAgent ? "justify-start" : "justify-end"}`}
                           >
+                            {isAgent && (
+                              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-muted-foreground">
+                                AI
+                              </div>
+                            )}
                             <div
-                              className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
+                              className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
                                 isAgent
-                                  ? "bg-muted"
-                                  : "bg-primary text-primary-foreground"
+                                  ? "rounded-bl-sm bg-muted"
+                                  : "rounded-br-sm bg-primary text-primary-foreground"
                               }`}
                             >
-                              <p className="mb-0.5 text-xs font-medium opacity-70">
-                                {isAgent ? "Agent" : "Customer"}
-                              </p>
                               {message}
                             </div>
+                            {!isAgent && (
+                              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[10px] font-semibold text-primary">
+                                C
+                              </div>
+                            )}
                           </div>
                         );
                       })}

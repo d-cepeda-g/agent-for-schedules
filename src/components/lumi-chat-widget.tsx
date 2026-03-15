@@ -64,6 +64,29 @@ const INITIAL_MESSAGE: ChatMessage = {
     "Tell me the event or request and I will research the best contact to call. I can schedule the call for you immediately.",
 };
 const MAX_CONTEXT_HISTORY = 10;
+const CHAT_STORAGE_KEY = "lumi:chat-messages";
+
+function readStoredMessages(): ChatMessage[] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(CHAT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) && parsed.length > 0 ? (parsed as ChatMessage[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+function storeMessages(messages: ChatMessage[]) {
+  try {
+    // Keep last 50 messages to avoid filling storage
+    const toStore = messages.slice(-50);
+    window.localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(toStore));
+  } catch {
+    // Ignore storage failures.
+  }
+}
 
 function makeId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
@@ -140,13 +163,19 @@ export function LumiChatWidget() {
   const [isSending, setIsSending] = useState(false);
   const [schedulingId, setSchedulingId] = useState<string | null>(null);
   const [requestError, setRequestError] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MESSAGE]);
+  const [messages, setMessages] = useState<ChatMessage[]>(
+    () => readStoredMessages() ?? [INITIAL_MESSAGE]
+  );
 
   useEffect(() => {
     const container = scrollRef.current;
     if (!container) return;
     container.scrollTop = container.scrollHeight;
   }, [messages, isSending]);
+
+  useEffect(() => {
+    storeMessages(messages);
+  }, [messages]);
 
   function appendAssistantMessage(text: string, suggestions?: ChatSuggestion[]) {
     setMessages((current) => [

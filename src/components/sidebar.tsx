@@ -149,8 +149,19 @@ export function Sidebar() {
   );
 }
 
+function usePageTitle(): string {
+  const pathname = usePathname();
+  const match = NAV_ITEMS.find(
+    (item) =>
+      pathname === item.href ||
+      (item.href !== "/" && pathname.startsWith(item.href))
+  );
+  return match?.label ?? "Lumi";
+}
+
 export function MobileNav() {
   const [open, setOpen] = useState(false);
+  const pageTitle = usePageTitle();
 
   return (
     <div className="sticky top-0 z-20 flex h-14 items-center border-b bg-background px-4 md:hidden">
@@ -174,7 +185,7 @@ export function MobileNav() {
           <NavLinks onClick={() => setOpen(false)} />
         </SheetContent>
       </Sheet>
-      <span className="ml-3 text-lg font-semibold">Lumi</span>
+      <span className="ml-3 text-sm font-semibold">{pageTitle}</span>
       <Link href="/schedule" className="ml-auto">
         <Button size="sm">
           <CalendarPlus className="h-4 w-4" />
