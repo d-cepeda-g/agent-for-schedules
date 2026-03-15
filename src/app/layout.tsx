@@ -37,7 +37,7 @@ export default function RootLayout({
         <div className="flex h-screen overflow-hidden">
           <Sidebar />
           <div className="flex flex-1 flex-col overflow-hidden">
-            <div className="sticky top-0 z-20 hidden h-16 items-center justify-end border-b border-[rgba(152,131,229,0.22)] bg-white/82 px-6 backdrop-blur md:flex">
+            <div className="sticky top-0 z-20 hidden h-14 items-center justify-end border-b bg-background px-6 md:flex">
               <Link href="/schedule">
                 <Button size="sm">
                   <CalendarPlus className="mr-2 h-4 w-4" />

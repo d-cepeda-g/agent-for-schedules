@@ -103,7 +103,7 @@ export function Sidebar() {
     >
       <div
         className={cn(
-          "flex h-16 items-center border-b border-sidebar-border",
+          "flex h-14 items-center border-b border-sidebar-border",
           collapsed ? "px-2" : "px-4 lg:px-6"
         )}
       >
@@ -153,7 +153,7 @@ export function MobileNav() {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="sticky top-0 z-20 flex h-16 items-center border-b border-[rgba(152,131,229,0.22)] bg-white/82 px-4 backdrop-blur md:hidden">
+    <div className="sticky top-0 z-20 flex h-14 items-center border-b bg-background px-4 md:hidden">
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetTrigger asChild>
           <Button variant="ghost" size="icon">
