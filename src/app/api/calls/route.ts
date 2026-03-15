@@ -65,25 +65,27 @@ export async function GET(request: NextRequest) {
       };
     }
 
+    const safePage = page ?? 1;
+    const pageSize = parsePageSize(searchParams.get("pageSize"));
+    const skip = (safePage - 1) * pageSize;
+
+    // Always paginate to prevent memory exhaustion on large datasets.
+    // Non-paginated requests default to page 1 with DEFAULT_PAGE_SIZE.
+    const [total, calls] = await Promise.all([
+      db.scheduledCall.count({ where }),
+      db.scheduledCall.findMany({
+        where,
+        orderBy: { scheduledAt: "desc" },
+        skip,
+        take: paginationRequested ? pageSize : Math.min(pageSize, MAX_PAGE_SIZE),
+        include: {
+          customer: { select: { id: true, name: true, phone: true } },
+          evaluation: { select: { id: true, result: true } },
+        },
+      }),
+    ]);
+
     if (paginationRequested) {
-      const safePage = page ?? 1;
-      const pageSize = parsePageSize(searchParams.get("pageSize"));
-      const skip = (safePage - 1) * pageSize;
-
-      const [total, calls] = await Promise.all([
-        db.scheduledCall.count({ where }),
-        db.scheduledCall.findMany({
-          where,
-          orderBy: { scheduledAt: "desc" },
-          skip,
-          take: pageSize,
-          include: {
-            customer: { select: { id: true, name: true, phone: true } },
-            evaluation: { select: { id: true, result: true } },
-          },
-        }),
-      ]);
-
       return NextResponse.json({
         items: calls,
         page: safePage,
@@ -93,15 +95,8 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const calls = await db.scheduledCall.findMany({
-      where,
-      orderBy: { scheduledAt: "desc" },
-      include: {
-        customer: { select: { id: true, name: true, phone: true } },
-        evaluation: { select: { id: true, result: true } },
-      },
-    });
-
+    // Legacy format: return array directly for backwards compatibility,
+    // but capped to MAX_PAGE_SIZE records.
     return NextResponse.json(calls);
   } catch (error) {
     console.error("[calls:GET]", error);

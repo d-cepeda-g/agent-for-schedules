@@ -1,4 +1,26 @@
 const ELEVENLABS_BASE_URL = "https://api.elevenlabs.io/v1";
+const MAX_RETRIES = 3;
+const RETRY_BASE_MS = 1000;
+const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
+
+async function fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const response = await fetch(url, init);
+      if (response.ok || !RETRYABLE_STATUS_CODES.has(response.status) || attempt === MAX_RETRIES) {
+        return response;
+      }
+      lastError = new Error(`ElevenLabs returned ${response.status}`);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error("Network error");
+      if (attempt === MAX_RETRIES) throw lastError;
+    }
+    const delay = RETRY_BASE_MS * Math.pow(2, attempt);
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
+  throw lastError ?? new Error("Retry exhausted");
+}
 
 function getHeaders(): HeadersInit {
   const apiKey = process.env.ELEVENLABS_API_KEY;
@@ -66,7 +88,7 @@ export async function makeOutboundCall(
     body.conversation_initiation_client_data = conversationInitiationClientData;
   }
 
-  const response = await fetch(
+  const response = await fetchWithRetry(
     `${ELEVENLABS_BASE_URL}/convai/twilio/outbound-call`,
     { method: "POST", headers: getHeaders(), body: JSON.stringify(body) }
   );
@@ -108,7 +130,7 @@ export async function submitBatchCall(
     body.scheduled_time_unix = scheduledTimeUnix;
   }
 
-  const response = await fetch(
+  const response = await fetchWithRetry(
     `${ELEVENLABS_BASE_URL}/convai/batch-calling/submit`,
     { method: "POST", headers: getHeaders(), body: JSON.stringify(body) }
   );
@@ -122,7 +144,7 @@ export async function submitBatchCall(
 }
 
 export async function getBatchCallStatus(batchId: string): Promise<BatchCallResult> {
-  const response = await fetch(
+  const response = await fetchWithRetry(
     `${ELEVENLABS_BASE_URL}/convai/batch-calling/${batchId}`,
     { method: "GET", headers: getHeaders() }
   );
@@ -154,7 +176,7 @@ export type ConversationDetail = {
 export async function getConversationDetail(
   conversationId: string
 ): Promise<ConversationDetail> {
-  const response = await fetch(
+  const response = await fetchWithRetry(
     `${ELEVENLABS_BASE_URL}/convai/conversations/${conversationId}`,
     { method: "GET", headers: getHeaders() }
   );

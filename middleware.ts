@@ -7,6 +7,27 @@ function unauthorizedResponse() {
   });
 }
 
+function timingSafeCompare(a: string, b: string): boolean {
+  const encoder = new TextEncoder();
+  const bufA = encoder.encode(a);
+  const bufB = encoder.encode(b);
+  if (bufA.byteLength !== bufB.byteLength) {
+    // Still perform a comparison to consume constant time, then return false.
+    const padded = new Uint8Array(bufA.byteLength);
+    let dummy = 0;
+    for (let i = 0; i < bufA.length; i++) {
+      dummy |= bufA[i] ^ padded[i];
+    }
+    void dummy;
+    return false;
+  }
+  let result = 0;
+  for (let i = 0; i < bufA.length; i++) {
+    result |= bufA[i] ^ bufB[i];
+  }
+  return result === 0;
+}
+
 function parseBasicAuth(authHeader: string): { username: string; password: string } | null {
   if (!authHeader.startsWith("Basic ")) return null;
 
@@ -50,8 +71,8 @@ export function middleware(request: NextRequest) {
   const expectedPass = process.env.BASIC_AUTH_PASSWORD;
 
   if (!expectedUser || !expectedPass) {
-    console.warn("[auth] ENABLE_BASIC_AUTH is true but BASIC_AUTH_USERNAME or BASIC_AUTH_PASSWORD is missing — auth bypassed");
-    return NextResponse.next();
+    console.error("[auth] BASIC_AUTH_USERNAME or BASIC_AUTH_PASSWORD is missing — blocking all requests");
+    return new NextResponse("Server misconfigured", { status: 503 });
   }
 
   const authHeader = request.headers.get("authorization");
@@ -60,7 +81,7 @@ export function middleware(request: NextRequest) {
   const parsed = parseBasicAuth(authHeader);
   if (!parsed) return unauthorizedResponse();
 
-  if (parsed.username !== expectedUser || parsed.password !== expectedPass) {
+  if (!timingSafeCompare(parsed.username, expectedUser) || !timingSafeCompare(parsed.password, expectedPass)) {
     return unauthorizedResponse();
   }
 

@@ -44,6 +44,19 @@ export function normalizeOptionalString(value: unknown): string | null {
   return value.trim();
 }
 
+const VALID_STATUS_TRANSITIONS: Record<CallStatus, CallStatus[]> = {
+  pending: ["dispatching", "cancelled"],
+  dispatching: ["dispatched", "failed", "pending"],
+  dispatched: ["completed", "failed"],
+  completed: [],
+  failed: ["pending"],
+  cancelled: ["pending"],
+};
+
+export function isValidStatusTransition(from: CallStatus, to: CallStatus): boolean {
+  return VALID_STATUS_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
 export function isLikelyPhoneNumber(phone: string): boolean {
   return LIKELY_PHONE_REGEX.test(phone);
 }

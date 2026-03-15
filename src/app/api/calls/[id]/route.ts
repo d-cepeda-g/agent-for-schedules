@@ -4,9 +4,11 @@ import { db } from "@/lib/db";
 import { isPrismaNotFoundError } from "@/lib/prisma-errors";
 import {
   isCallStatus,
+  isValidStatusTransition,
   normalizeOptionalString,
   normalizeRequiredString,
   parseDateInput,
+  type CallStatus,
 } from "@/lib/validation";
 
 type Params = { params: Promise<{ id: string }> };
@@ -43,10 +45,15 @@ export async function PATCH(_request: NextRequest, { params }: Params) {
 
   const data: Record<string, unknown> = {};
 
+  let statusTransitionRequested = false;
+  let newStatus: CallStatus | null = null;
+
   if (body.status !== undefined) {
     if (!isCallStatus(body.status)) {
       return NextResponse.json({ error: "Invalid call status" }, { status: 400 });
     }
+    statusTransitionRequested = true;
+    newStatus = body.status;
     data.status = body.status;
   }
 
@@ -126,6 +133,25 @@ export async function PATCH(_request: NextRequest, { params }: Params) {
     );
   }
 
+  if (statusTransitionRequested && newStatus) {
+    const current = await db.scheduledCall.findUnique({
+      where: { id },
+      select: { status: true },
+    });
+    if (!current) {
+      return NextResponse.json({ error: "Call not found" }, { status: 404 });
+    }
+    if (!isCallStatus(current.status)) {
+      return NextResponse.json({ error: "Call has invalid current status" }, { status: 500 });
+    }
+    if (!isValidStatusTransition(current.status, newStatus)) {
+      return NextResponse.json(
+        { error: `Cannot transition from '${current.status}' to '${newStatus}'` },
+        { status: 409 }
+      );
+    }
+  }
+
   try {
     const call = await db.scheduledCall.update({
       where: { id },
@@ -174,6 +200,21 @@ export async function PATCH(_request: NextRequest, { params }: Params) {
 export async function DELETE(_request: NextRequest, { params }: Params) {
   const { id } = await params;
   try {
+    const call = await db.scheduledCall.findUnique({
+      where: { id },
+      select: { id: true, status: true, customerId: true, scheduledAt: true },
+    });
+    if (!call) {
+      return NextResponse.json({ error: "Call not found" }, { status: 404 });
+    }
+
+    await createCallLogSafe({
+      scheduledCallId: id,
+      event: "call_deleted",
+      message: `Call deleted (was ${call.status}, scheduled ${call.scheduledAt.toISOString()})`,
+      details: { customerId: call.customerId, status: call.status },
+    });
+
     await db.scheduledCall.delete({ where: { id } });
     return NextResponse.json({ success: true });
   } catch (error) {

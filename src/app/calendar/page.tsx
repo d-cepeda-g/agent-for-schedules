@@ -43,6 +43,7 @@ export default function CalendarViewPage() {
   const [loading, setLoading] = useState(true);
   const [upcomingEvents, setUpcomingEvents] = useState<ScheduledCall[]>([]);
   const [upcomingLoading, setUpcomingLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [deletingCallId, setDeletingCallId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -52,6 +53,7 @@ export default function CalendarViewPage() {
 
     async function loadMonthCalls() {
       setLoading(true);
+      setError(null);
       const params = new URLSearchParams({
         from: from.toISOString(),
         to: to.toISOString(),
@@ -62,6 +64,7 @@ export default function CalendarViewPage() {
         if (!res.ok) {
           if (active) {
             setCalls([]);
+            setError("Failed to load calls for this month.");
             setLoading(false);
           }
           return;
@@ -75,6 +78,7 @@ export default function CalendarViewPage() {
       } catch {
         if (active) {
           setCalls([]);
+          setError("Network error loading calls.");
           setLoading(false);
         }
       }
@@ -92,7 +96,14 @@ export default function CalendarViewPage() {
     async function loadUpcomingEvents() {
       setUpcomingLoading(true);
       try {
-        const res = await fetch("/api/calls");
+        const now = new Date();
+        const params = new URLSearchParams({
+          from: now.toISOString(),
+          status: "pending",
+          pageSize: "8",
+          page: "1",
+        });
+        const res = await fetch(`/api/calls?${params.toString()}`);
         if (!res.ok) {
           if (active) {
             setUpcomingEvents([]);
@@ -101,17 +112,12 @@ export default function CalendarViewPage() {
           return;
         }
 
-        const payload = (await res.json()) as ScheduledCall[];
+        const payload = await res.json();
         if (!active) return;
 
-        const now = Date.now();
-        const upcoming = payload
-          .filter((call) => {
-            const timestamp = new Date(call.scheduledAt).getTime();
-            if (!Number.isFinite(timestamp)) return false;
-            if (timestamp < now) return false;
-            return ["pending", "dispatching", "dispatched"].includes(call.status);
-          })
+        // Support both paginated and array responses
+        const items = (Array.isArray(payload) ? payload : payload.items || []) as ScheduledCall[];
+        const upcoming = items
           .sort(
             (a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
           )
@@ -222,7 +228,9 @@ export default function CalendarViewPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {loading ? (
+            {error ? (
+              <p className="py-4 text-sm text-destructive">{error}</p>
+            ) : loading ? (
               <p className="py-4 text-sm text-muted-foreground">Loading calls...</p>
             ) : selectedCalls.length === 0 ? (
               <p className="py-4 text-sm text-muted-foreground">

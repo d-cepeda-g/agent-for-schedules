@@ -29,7 +29,7 @@ type DispatchOptions = {
   allowedStatuses?: CallStatus[];
 };
 
-function getMissingConfigError(message: string): boolean {
+function isMissingConfigError(message: string): boolean {
   return message.includes("ELEVENLABS_") && message.includes("is not set");
 }
 
@@ -161,7 +161,7 @@ export async function dispatchScheduledCall(
     return { ok: true, call: updatedCall, elevenlabs: result };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    const isConfigError = getMissingConfigError(message);
+    const isConfigError = isMissingConfigError(message);
 
     await db.scheduledCall.update({
       where: { id: call.id },

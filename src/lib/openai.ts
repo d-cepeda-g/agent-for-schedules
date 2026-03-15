@@ -66,12 +66,7 @@ export type WebSearchTextCompletionResult = {
 };
 
 function readOpenAiApiKey(): string {
-  return (
-    process.env.OPENAI_API_KEY ||
-    process.env.OPENAI_KEY ||
-    process.env["OPENAI-KEY"] ||
-    ""
-  ).trim();
+  return (process.env.OPENAI_API_KEY || "").trim();
 }
 
 export function hasOpenAiApiKey(): boolean {
