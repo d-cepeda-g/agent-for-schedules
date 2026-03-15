@@ -158,7 +158,10 @@ export default function CustomersPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this contact? This will also remove their calls."))
+    const customer = customers.find((c) => c.id === id);
+    const callCount = customer?._count?.calls ?? 0;
+    const callWarning = callCount > 0 ? ` This will also remove ${callCount} associated call${callCount === 1 ? "" : "s"}.` : "";
+    if (!confirm(`Delete ${customer?.name || "this contact"}?${callWarning}`))
       return;
     setDeletingId(id);
     try {
@@ -317,7 +320,9 @@ export default function CustomersPage() {
             </p>
           ) : customers.length === 0 ? (
             <p className="py-8 text-center text-muted-foreground">
-              No contacts yet. Add your first one above.
+              {search
+                ? `No contacts matching "${search}".`
+                : "No contacts yet. Add your first one above."}
             </p>
           ) : (
             <Table>

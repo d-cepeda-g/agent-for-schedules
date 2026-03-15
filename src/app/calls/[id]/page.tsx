@@ -485,20 +485,25 @@ export default function CallDetailPage() {
                 </div>
               )}
 
-              <div className="flex gap-2">
-                {["pending", "failed"].includes(call.status) &&
-                  new Date(call.scheduledAt).getTime() <= Date.now() && (
-                  <Button
-                    onClick={handleDispatch}
-                    disabled={dispatching}
-                  >
-                    <Play className="mr-2 h-4 w-4" />
-                    {dispatching
-                      ? "Dispatching..."
-                      : call.status === "failed"
-                        ? "Retry Call"
-                        : "Dispatch Call Now"}
-                  </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                {["pending", "failed"].includes(call.status) && (
+                  new Date(call.scheduledAt).getTime() <= Date.now() ? (
+                    <Button
+                      onClick={handleDispatch}
+                      disabled={dispatching}
+                    >
+                      <Play className="mr-2 h-4 w-4" />
+                      {dispatching
+                        ? "Dispatching..."
+                        : call.status === "failed"
+                          ? "Retry Call"
+                          : "Dispatch Call Now"}
+                    </Button>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Dispatch available {format(new Date(call.scheduledAt), "'on' MMM d 'at' h:mm a")}
+                    </p>
+                  )
                 )}
                 {call.conversationId && !call.evaluation && (
                   <Button

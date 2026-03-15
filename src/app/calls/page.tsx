@@ -61,6 +61,7 @@ export default function CallsPage() {
   const [loading, setLoading] = useState(true);
   const [dispatching, setDispatching] = useState<string | null>(null);
   const [deletingCallId, setDeletingCallId] = useState<string | null>(null);
+  const [pageError, setPageError] = useState<string | null>(null);
 
   const refreshCalls = useCallback(async (filter: string, currentPage: number, currentPageSize: number) => {
     const params = new URLSearchParams();
@@ -115,7 +116,7 @@ export default function CallsPage() {
       });
       if (!res.ok) {
         const data = await res.json();
-        alert(data.error || "Failed to dispatch call");
+        setPageError(data.error || "Failed to dispatch call");
       } else {
         await refreshCalls(statusFilter, page, pageSize);
       }
@@ -128,7 +129,7 @@ export default function CallsPage() {
     const res = await fetch(`/api/calls/${callId}/evaluation`);
     if (!res.ok) {
       const data = await res.json();
-      alert(data.error || "Failed to fetch evaluation");
+      setPageError(data.error || "Failed to fetch evaluation");
       return;
     }
     await refreshCalls(statusFilter, page, pageSize);
@@ -153,7 +154,7 @@ export default function CallsPage() {
         const payload = (await response.json().catch(() => null)) as
           | { error?: string }
           | null;
-        alert(payload?.error || "Failed to delete call");
+        setPageError(payload?.error || "Failed to delete call");
         return;
       }
 
@@ -230,6 +231,20 @@ export default function CallsPage() {
           </Select>
         </div>
       </div>
+
+      {pageError && (
+        <div className="flex items-center justify-between rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-2 text-sm text-destructive">
+          <span>{pageError}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-auto px-2 py-1 text-xs text-destructive hover:text-destructive"
+            onClick={() => setPageError(null)}
+          >
+            Dismiss
+          </Button>
+        </div>
+      )}
 
       <Card>
         <CardContent className="p-0">

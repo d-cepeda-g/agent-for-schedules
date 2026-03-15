@@ -12,6 +12,7 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
+import { format, parseISO } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -147,6 +148,16 @@ function buildPrefillHref(suggestion: ChatSuggestion): string {
   return `/schedule?${params.toString()}`;
 }
 
+function formatSuggestionDate(dateStr: string, timeStr: string): string {
+  try {
+    const parsed = parseISO(`${dateStr}T${timeStr}`);
+    if (Number.isNaN(parsed.getTime())) return `${dateStr} at ${timeStr}`;
+    return format(parsed, "EEEE, MMM d 'at' h:mm a");
+  } catch {
+    return `${dateStr} at ${timeStr}`;
+  }
+}
+
 function readErrorMessage(payload: unknown): string {
   if (!payload || typeof payload !== "object") return "Unknown error";
   const record = payload as Record<string, unknown>;
@@ -190,6 +201,7 @@ export function LumiChatWidget() {
   }
 
   function handleNewChat() {
+    if (messages.length > 1 && !confirm("Clear chat history? This cannot be undone.")) return;
     setRequestError(null);
     setDraft("");
     setMessages([INITIAL_MESSAGE]);
@@ -350,8 +362,9 @@ export function LumiChatWidget() {
       const createdCallId =
         payload && typeof payload.id === "string" ? payload.id : "";
 
+      const readableDate = formatSuggestionDate(suggestion.scheduledDate, suggestion.scheduledTime);
       appendAssistantMessage(
-        `Call scheduled with ${suggestion.name} for ${suggestion.scheduledDate} at ${suggestion.scheduledTime}.`
+        `Call scheduled with ${suggestion.name} for ${readableDate}.`
       );
 
       if (createdCallId) {

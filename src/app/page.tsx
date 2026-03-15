@@ -26,6 +26,7 @@ import {
   parseIsoFromAction,
   toPrefillUrl,
   hasPreviousCallHistory,
+  isOnsiteDateRelevant,
 } from "@/components/dashboard/helpers";
 import { StatsCards } from "@/components/dashboard/stats-cards";
 import { UpcomingCalls } from "@/components/dashboard/upcoming-calls";
@@ -48,6 +49,7 @@ export default function DashboardPage() {
   const [showOnsiteLocations, setShowOnsiteLocations] = useState(false);
   const [findingOnsiteLocations, setFindingOnsiteLocations] = useState(false);
   const [stats, setStats] = useState({ totalCalls: 0, pending: 0, completed: 0 });
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/calls")
@@ -109,6 +111,7 @@ export default function DashboardPage() {
   const proactiveActionsWithOnsite = useMemo(() => {
     const actions = sortedActions.filter((a) => a.id !== ONSITE_BLOCKER_ACTION_ID);
     if (dismissedActionIdSet.has(ONSITE_BLOCKER_ACTION_ID)) return actions;
+    if (!isOnsiteDateRelevant()) return actions;
     return [onsiteBlockerAction, ...actions];
   }, [sortedActions, dismissedActionIdSet, onsiteBlockerAction]);
 
@@ -194,7 +197,7 @@ export default function DashboardPage() {
 
     if (!response.ok) {
       const err = (await response.json().catch(() => null)) as { error?: string } | null;
-      if (err?.error) alert(err.error);
+      if (err?.error) setDashboardError(err.error);
       if (fallbackToPrefill) router.push(toPrefillUrl(action));
       return null;
     }
@@ -290,6 +293,20 @@ export default function DashboardPage() {
           Overview of your scheduled calls and evaluations
         </p>
       </div>
+
+      {dashboardError && (
+        <div className="flex items-center justify-between rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-2 text-sm text-destructive">
+          <span>{dashboardError}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-auto px-2 py-1 text-xs text-destructive hover:text-destructive"
+            onClick={() => setDashboardError(null)}
+          >
+            Dismiss
+          </Button>
+        </div>
+      )}
 
       {!valentinePanelDismissed && visibleValentineRestaurants.length > 0 ? (
         <ValentinePanel

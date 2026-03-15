@@ -21,9 +21,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Calendar } from "@/components/ui/calendar";
 import { Badge } from "@/components/ui/badge";
-import { CalendarPlus, Clock, Phone, Trash2 } from "lucide-react";
+import { CalendarPlus, Clock, Phone, Plus, Trash2 } from "lucide-react";
 
 type Customer = {
   id: string;
@@ -71,6 +78,10 @@ function SchedulePageContent() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [newContactOpen, setNewContactOpen] = useState(false);
+  const [newContactName, setNewContactName] = useState("");
+  const [newContactPhone, setNewContactPhone] = useState("");
+  const [newContactSaving, setNewContactSaving] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -181,6 +192,39 @@ function SchedulePageContent() {
     );
     if (selectedCustomer?.preferredLanguage) {
       setPreferredLanguage(selectedCustomer.preferredLanguage);
+    }
+  }
+
+  async function handleCreateContact(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newContactName.trim() || !newContactPhone.trim()) return;
+    setNewContactSaving(true);
+    try {
+      const response = await fetch("/api/customers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newContactName.trim(),
+          phone: newContactPhone.trim(),
+          email: "",
+          notes: "",
+          preferredLanguage: "English",
+        }),
+      });
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        setFormError(data?.error || "Failed to create contact");
+        return;
+      }
+      const created = (await response.json()) as Customer & { id: string };
+      setCustomers((prev) => [...prev, created]);
+      setCustomerId(created.id);
+      if (created.preferredLanguage) setPreferredLanguage(created.preferredLanguage);
+      setNewContactName("");
+      setNewContactPhone("");
+      setNewContactOpen(false);
+    } finally {
+      setNewContactSaving(false);
     }
   }
 
@@ -320,30 +364,68 @@ function SchedulePageContent() {
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Customer</Label>
-                    <Select
-                      value={customerId}
-                      onValueChange={handleCustomerSelection}
-                      disabled={customersLoading}
-                    >
-                      <SelectTrigger>
-                        <SelectValue
-                          placeholder={
-                            customersLoading
-                              ? "Loading contacts..."
-                              : customers.length === 0
-                                ? "No contacts yet"
-                                : "Select customer"
-                          }
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {customers.map((c) => (
-                          <SelectItem key={c.id} value={c.id}>
-                            {c.name} ({c.phone})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="flex gap-2">
+                      <Select
+                        value={customerId}
+                        onValueChange={handleCustomerSelection}
+                        disabled={customersLoading}
+                      >
+                        <SelectTrigger className="flex-1">
+                          <SelectValue
+                            placeholder={
+                              customersLoading
+                                ? "Loading contacts..."
+                                : customers.length === 0
+                                  ? "No contacts yet"
+                                  : "Select customer"
+                            }
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {customers.map((c) => (
+                            <SelectItem key={c.id} value={c.id}>
+                              {c.name} ({c.phone})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Dialog open={newContactOpen} onOpenChange={setNewContactOpen}>
+                        <DialogTrigger asChild>
+                          <Button type="button" variant="outline" size="icon" title="New contact">
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Quick Add Contact</DialogTitle>
+                          </DialogHeader>
+                          <form onSubmit={handleCreateContact} className="space-y-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="new-contact-name">Name</Label>
+                              <Input
+                                id="new-contact-name"
+                                value={newContactName}
+                                onChange={(e) => setNewContactName(e.target.value)}
+                                required
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="new-contact-phone">Phone</Label>
+                              <Input
+                                id="new-contact-phone"
+                                value={newContactPhone}
+                                onChange={(e) => setNewContactPhone(e.target.value)}
+                                placeholder="+1234567890"
+                                required
+                              />
+                            </div>
+                            <Button type="submit" className="w-full" disabled={newContactSaving}>
+                              {newContactSaving ? "Creating..." : "Create & Select"}
+                            </Button>
+                          </form>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <Label>Time</Label>

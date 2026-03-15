@@ -4,8 +4,14 @@ export const DISMISSED_ACTIONS_STORAGE_KEY = "dashboard:dismissed_proactive_acti
 export const DISMISSED_VALENTINE_PANEL_STORAGE_KEY = "dashboard:dismissed_valentine_panel";
 
 export const COMPANY_ONSITE_DATE_LABEL = "06.03.2026";
+export const COMPANY_ONSITE_DATE_ISO = "2026-03-06";
 export const ONSITE_BLOCKER_ACTION_ID = "company-onsite-blocker-2026-03-06";
 export const ONSITE_SEARCH_DELAY_MS = 1600;
+
+export function isOnsiteDateRelevant(): boolean {
+  const onsiteDate = new Date(COMPANY_ONSITE_DATE_ISO + "T23:59:59");
+  return onsiteDate.getTime() > Date.now();
+}
 
 const ONSITE_VENUES = [
   {
