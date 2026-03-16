@@ -17,7 +17,47 @@ model Customer {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  calls ScheduledCall[]
+  calls         ScheduledCall[]
+  inboundCalls  InboundCall[]
+}
+
+model InboundCall {
+  id              String   @id @default(cuid())
+  conversationId  String   @unique
+  callerPhone     String
+  customerId      String?
+  status          String   @default("active") // active | completed | missed | failed
+  intent          String   @default("") // AI-detected caller intent
+  summary         String   @default("") // AI-generated call summary
+  transcript      String   @default("")
+  duration        Int      @default(0) // seconds
+  sentiment       String   @default("neutral") // positive | neutral | negative
+  followUpNeeded  Boolean  @default(false)
+  followUpNotes   String   @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  customer    Customer?  @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  actionItems InboundCallActionItem[]
+
+  @@index([customerId])
+  @@index([callerPhone])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model InboundCallActionItem {
+  id             String   @id @default(cuid())
+  inboundCallId  String
+  title          String
+  detail         String
+  completed      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  inboundCall InboundCall @relation(fields: [inboundCallId], references: [id], onDelete: Cascade)
+
+  @@index([inboundCallId, createdAt])
 }
 
 model ScheduledCall {

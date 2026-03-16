@@ -9,6 +9,7 @@ import {
   CalendarDays,
   Users,
   Phone,
+  PhoneIncoming,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
@@ -24,6 +25,7 @@ const NAV_ITEMS = [
   { href: "/schedule", label: "Schedule", icon: CalendarPlus },
   { href: "/customers", label: "Contacts", icon: Users },
   { href: "/calls", label: "Calls", icon: Phone },
+  { href: "/inbound", label: "Inbound", icon: PhoneIncoming },
 ];
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = "dashboard:sidebar-collapsed";

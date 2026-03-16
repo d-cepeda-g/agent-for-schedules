@@ -31,6 +31,7 @@ import {
 import { StatsCards } from "@/components/dashboard/stats-cards";
 import { UpcomingCalls } from "@/components/dashboard/upcoming-calls";
 import { RecentEvaluations } from "@/components/dashboard/recent-evaluations";
+import { RecentInbound, type RecentInboundCall } from "@/components/dashboard/recent-inbound";
 import { AiOpsCopilot } from "@/components/dashboard/ai-ops-copilot";
 import { ValentinePanel } from "@/components/dashboard/valentine-panel";
 
@@ -49,6 +50,7 @@ export default function DashboardPage() {
   const [showOnsiteLocations, setShowOnsiteLocations] = useState(false);
   const [findingOnsiteLocations, setFindingOnsiteLocations] = useState(false);
   const [stats, setStats] = useState({ totalCalls: 0, pending: 0, completed: 0 });
+  const [recentInbound, setRecentInbound] = useState<RecentInboundCall[]>([]);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -75,6 +77,11 @@ export default function DashboardPage() {
       .then((r) => r.json())
       .then((evals: Evaluation[]) => setRecentEvals(evals.slice(0, 5)))
       .catch(() => setRecentEvals([]));
+
+    fetch("/api/inbound-calls?pageSize=5")
+      .then((r) => r.json())
+      .then((data: { items: RecentInboundCall[] }) => setRecentInbound(data.items || []))
+      .catch(() => setRecentInbound([]));
 
     fetch("/api/ai/dashboard-insights")
       .then((r) => r.json())
@@ -340,6 +347,10 @@ export default function DashboardPage() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <UpcomingCalls calls={upcomingCalls} />
+        <RecentInbound calls={recentInbound} />
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
         <RecentEvaluations evaluations={recentEvals} />
       </div>
 
