@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Search, Pencil, Trash2, History } from "lucide-react";
+import { CsvImportDialog } from "@/components/csv-import-dialog";
 
 type Customer = {
   id: string;
@@ -188,7 +189,9 @@ export default function CustomersPage() {
             Manage your contacts
           </p>
         </div>
-        <Dialog
+        <div className="flex gap-2">
+          <CsvImportDialog onImported={refreshCustomers} />
+          <Dialog
           open={dialogOpen}
           onOpenChange={(open) => {
             setDialogOpen(open);
@@ -282,6 +285,7 @@ export default function CustomersPage() {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {pageError && (
