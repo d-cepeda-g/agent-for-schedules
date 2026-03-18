@@ -240,7 +240,7 @@ export default function InboundCallsPage() {
                         <span className="text-muted-foreground">Unknown caller</span>
                       )}
                       {call.followUpNeeded && (
-                        <AlertCircle className="ml-1 inline h-3.5 w-3.5 text-amber-500" />
+                        <AlertCircle className="ml-1 inline h-3.5 w-3.5 text-muted-foreground" />
                       )}
                     </TableCell>
                     <TableCell>{call.callerPhone}</TableCell>
@@ -262,7 +262,7 @@ export default function InboundCallsPage() {
                       <span
                         className={
                           call.sentiment === "positive"
-                            ? "text-green-600"
+                            ? "text-muted-foreground"
                             : call.sentiment === "negative"
                               ? "text-destructive"
                               : "text-muted-foreground"

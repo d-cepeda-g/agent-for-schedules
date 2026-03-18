@@ -60,7 +60,7 @@ export function RecentInbound({ calls }: { calls: RecentInboundCall[] }) {
                       {call.customer?.name || call.callerPhone}
                     </p>
                     {call.followUpNeeded && (
-                      <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+                      <AlertCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     )}
                   </div>
                   <p className="line-clamp-1 text-xs text-muted-foreground">

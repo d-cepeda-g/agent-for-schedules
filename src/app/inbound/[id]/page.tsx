@@ -67,7 +67,7 @@ function formatDuration(seconds: number): string {
 }
 
 function SentimentIcon({ sentiment }: { sentiment: string }) {
-  if (sentiment === "positive") return <CheckCircle className="h-5 w-5 text-green-600" />;
+  if (sentiment === "positive") return <CheckCircle className="h-5 w-5 text-muted-foreground" />;
   if (sentiment === "negative") return <XCircle className="h-5 w-5 text-destructive" />;
   return <Clock className="h-5 w-5 text-muted-foreground" />;
 }
@@ -206,8 +206,8 @@ export default function InboundCallDetailPage() {
               </div>
 
               {call.followUpNeeded && (
-                <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm dark:border-amber-800 dark:bg-amber-950">
-                  <AlertCircle className="h-4 w-4 text-amber-600" />
+                <div className="flex items-center gap-2 rounded-lg border border-border bg-muted px-3 py-2 text-sm">
+                  <AlertCircle className="h-4 w-4 text-muted-foreground" />
                   <span>Follow-up needed</span>
                 </div>
               )}

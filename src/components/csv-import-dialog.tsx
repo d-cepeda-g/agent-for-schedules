@@ -174,7 +174,7 @@ export function CsvImportDialog({
         {state.step === "done" && (
           <div className="space-y-4">
             <div className="flex items-center gap-2 text-sm">
-              <CheckCircle2 className="h-5 w-5 text-green-600" />
+              <CheckCircle2 className="h-5 w-5 text-muted-foreground" />
               <span>
                 <strong>{state.result.created}</strong> contact
                 {state.result.created !== 1 ? "s" : ""} imported
