@@ -61,18 +61,18 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const enabled =
-    process.env.NODE_ENV === "production" ||
-    process.env.ENABLE_BASIC_AUTH === "true";
-
-  if (!enabled) return NextResponse.next();
-
+  const explicitlyEnabled = process.env.ENABLE_BASIC_AUTH === "true";
   const expectedUser = process.env.BASIC_AUTH_USERNAME;
   const expectedPass = process.env.BASIC_AUTH_PASSWORD;
+  const hasCredentials = Boolean(expectedUser && expectedPass);
 
-  if (!expectedUser || !expectedPass) {
-    console.error("[auth] BASIC_AUTH_USERNAME or BASIC_AUTH_PASSWORD is missing — blocking all requests");
-    return new NextResponse("Server misconfigured", { status: 503 });
+  const enabled =
+    (process.env.NODE_ENV === "production" && hasCredentials) || explicitlyEnabled;
+
+  if (!enabled) return NextResponse.next();
+  if (!hasCredentials) {
+    console.error("[auth] BASIC_AUTH_USERNAME or BASIC_AUTH_PASSWORD is missing — basic auth disabled");
+    return NextResponse.next();
   }
 
   const authHeader = request.headers.get("authorization");
