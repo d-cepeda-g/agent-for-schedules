@@ -166,7 +166,7 @@ export function MobileNav() {
   const pageTitle = usePageTitle();
 
   return (
-    <div className="sticky top-0 z-20 flex h-14 items-center border-b bg-background px-4 md:hidden">
+    <div className="sticky top-0 z-20 flex h-14 items-center border-b border-border bg-background px-4 md:hidden">
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetTrigger asChild>
           <Button variant="ghost" size="icon">
@@ -189,7 +189,7 @@ export function MobileNav() {
       </Sheet>
       <span className="ml-3 text-sm font-semibold">{pageTitle}</span>
       <Link href="/schedule" className="ml-auto">
-        <Button size="sm">
+        <Button variant="secondary" size="sm">
           <CalendarPlus className="h-4 w-4" />
           <span className="ml-2 hidden sm:inline">Schedule Call</span>
         </Button>

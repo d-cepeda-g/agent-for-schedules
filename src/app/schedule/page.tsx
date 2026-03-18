@@ -315,8 +315,8 @@ function SchedulePageContent() {
         </p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[auto_1fr]">
-        <Card>
+      <div className="grid min-w-0 gap-6 lg:grid-cols-[auto_1fr]">
+        <Card className="min-w-0 shrink-0">
           <CardContent className="p-4">
             <Calendar
               mode="single"
@@ -327,8 +327,8 @@ function SchedulePageContent() {
           </CardContent>
         </Card>
 
-        <div className="space-y-6">
-          <Card>
+        <div className="min-w-0 space-y-6">
+          <Card className="min-w-0">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <CalendarPlus className="h-5 w-5" />
@@ -361,16 +361,16 @@ function SchedulePageContent() {
                 <p className="mb-4 text-sm text-destructive">{formError}</p>
               )}
               <form onSubmit={handleSchedule} className="space-y-4">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
+                <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="min-w-0 space-y-2">
                     <Label>Customer</Label>
-                    <div className="flex gap-2">
+                    <div className="flex min-w-0 gap-2">
                       <Select
                         value={customerId}
                         onValueChange={handleCustomerSelection}
                         disabled={customersLoading}
                       >
-                        <SelectTrigger className="flex-1">
+                        <SelectTrigger className="w-full min-w-0 [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:truncate">
                           <SelectValue
                             placeholder={
                               customersLoading
@@ -427,31 +427,33 @@ function SchedulePageContent() {
                       </Dialog>
                     </div>
                   </div>
-                  <div className="space-y-2">
+                  <div className="min-w-0 space-y-2 sm:min-w-[8rem]">
                     <Label>Time</Label>
                     <Input
                       type="time"
                       value={time}
                       onChange={(e) => setTime(e.target.value)}
+                      className="w-full min-w-0"
                     />
                   </div>
                 </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
+                <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="min-w-0 space-y-2">
                     <Label>Reason for call</Label>
                     <Input
                       value={callReason}
                       onChange={(e) => setCallReason(e.target.value)}
                       placeholder="e.g., Appointment scheduling"
+                      className="min-w-0"
                     />
                   </div>
-                  <div className="space-y-2">
+                  <div className="min-w-0 space-y-2">
                     <Label>Preferred language</Label>
                     <Select
                       value={preferredLanguage}
                       onValueChange={setPreferredLanguage}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger className="min-w-0 w-full">
                         <SelectValue placeholder="Select language" />
                       </SelectTrigger>
                       <SelectContent>
@@ -484,6 +486,7 @@ function SchedulePageContent() {
                 </div>
                 <Button
                   type="submit"
+                  variant="secondary"
                   disabled={!customerId || !selectedDate || submitting}
                 >
                   {submitting ? "Scheduling..." : "Schedule Call"}

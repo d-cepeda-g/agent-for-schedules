@@ -32,21 +32,21 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${manrope.variable} ${jetBrainsMono.variable} antialiased`}>
+      <body className={`${manrope.variable} ${jetBrainsMono.variable} antialiased bg-background`}>
         <DispatchHeartbeat />
-        <div className="flex h-screen overflow-hidden">
+        <div className="flex h-screen overflow-hidden bg-background">
           <Sidebar />
-          <div className="flex flex-1 flex-col overflow-hidden">
-            <div className="sticky top-0 z-20 hidden h-14 items-center justify-end border-b bg-background px-6 md:flex">
+          <div className="flex flex-1 flex-col overflow-hidden bg-background">
+            <div className="sticky top-0 z-20 hidden h-14 items-center justify-end border-b border-border bg-background px-6 md:flex">
               <Link href="/schedule">
-                <Button size="sm">
+                <Button variant="secondary" size="sm">
                   <CalendarPlus className="mr-2 h-4 w-4" />
                   Schedule Call
                 </Button>
               </Link>
             </div>
             <MobileNav />
-            <main className="flex-1 overflow-y-auto p-6">{children}</main>
+            <main className="flex-1 overflow-y-auto bg-background p-6">{children}</main>
           </div>
         </div>
         <LumiChatWidget />

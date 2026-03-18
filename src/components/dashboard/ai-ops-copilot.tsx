@@ -58,6 +58,7 @@ function ActionCard({
       </p>
       <div className="mt-3 flex items-center gap-2">
         <Button
+          variant="secondary"
           size="sm"
           disabled={isOnsiteBlocker ? findingOnsiteLocations : isCreating}
           onClick={isOnsiteBlocker ? onToggleOnsite : onRun}

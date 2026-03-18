@@ -122,8 +122,14 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    background-color: var(--background);
+    background-image: none;
+  }
   body {
     @apply bg-background text-foreground;
     min-height: 100vh;
+    background-color: var(--background);
+    background-image: none;
   }
 }
